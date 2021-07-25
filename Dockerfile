@@ -1,6 +1,6 @@
 FROM golang:1.13-buster AS build
 COPY . /src/github.com/arussellsaw/news
-RUN cd /src/github.com/arussellsaw/news && CGO_ENABLED=0 go build -o news -mod=vendor
+RUN cd /src/github.com/arussellsaw/news && CGO_ENABLED=0 go build -o news 
 
 FROM alpine:latest AS final
 RUN apk --no-cache add ca-certificates nodejs npm
