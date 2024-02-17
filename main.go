@@ -32,11 +32,11 @@ func main() {
 
 	slog.SetDefaultLogger(logger)
 
-	// err = dao.Init(ctx)
-	// if err != nil {
-	// 	slog.Error(ctx, "error initialising dao: %s", err)
-	// 	os.Exit(1)
-	// }
+	err = dao.Init(ctx)
+	if err != nil {
+		slog.Error(ctx, "error initialising dao: %s", err)
+		os.Exit(1)
+	}
 
 	var addr string
 	if os.Getenv("NEWS_ENV") == "debug" {
