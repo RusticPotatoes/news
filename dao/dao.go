@@ -3,71 +3,346 @@ package dao
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
+	"golang.org/x/sync/errgroup"
+
+	"database/sql"
+
 	"github.com/RusticPotatoes/news/domain"
-	"github.com/elastic/go-elasticsearch/v8"
-	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
-// import "github.com/elastic/go-elasticsearch/v8"
-
 var (
-	client       *elasticsearch.Client
+	db           *sql.DB
 	mu           sync.RWMutex
-	articleCache = make(map[string]*domain.Article)
+	articleCache = make(map[string]domain.Article)
 )
 
 func Init(ctx context.Context) error {
-	cfg := elasticsearch.Config{
-		Addresses: []string{
-			"http://localhost:9200",
-		},
+	var err error
+	db, err = sql.Open("sqlite3", "./editions.db")
+	return err
+}
+
+// type storedEdition struct {
+// 	ID         string
+// 	Name       string
+// 	Date       string
+// 	StartTime  time.Time
+// 	EndTime    time.Time
+// 	Created    time.Time
+// 	Sources    []domain.Source
+// 	Articles   []string
+// 	Categories []string
+// 	Metadata   map[string]string
+// }
+
+type storedEdition struct {
+	ID         string
+	Name       string
+	Date       string
+	StartTime  time.Time
+	EndTime    time.Time
+	Created    time.Time
+	Sources    string
+	Articles   string
+	Categories string
+	Metadata   string
+}
+
+func Client() *sql.DB {
+    return db
+}
+
+func GetEditionForTime(ctx context.Context, t time.Time, allowRecent bool) (*domain.Edition, error) {
+	rows, err := db.Query("SELECT * FROM editions WHERE EndTime > ? ORDER BY EndTime DESC", t)
+	if err != nil {
+		return nil, err
 	}
-	es, err := elasticsearch.NewClient(cfg)
+	defer rows.Close()
+
+	candidates := []*domain.Edition{}
+	var maxEdition storedEdition
+
+	for rows.Next() {
+		var s storedEdition
+		err = rows.Scan(&s.ID, &s.Name, &s.Date, &s.StartTime, &s.EndTime, &s.Created, /* ... other fields ... */)
+		if err != nil {
+			return nil, err
+		}
+
+		if s.EndTime.After(maxEdition.EndTime) {
+			maxEdition = s
+		}
+
+		if s.EndTime.After(t) {
+			e, err := editionFromStored(ctx, s)
+			if err != nil {
+				return nil, err
+			}
+			candidates = append(candidates, e)
+		}
+	}
+
+	if len(candidates) == 0 {
+		if maxEdition.ID != "" && allowRecent {
+			return editionFromStored(ctx, maxEdition)
+		}
+	}
+
+	selected := &domain.Edition{}
+	for _, e := range candidates {
+		if e.Created.After(selected.Created) {
+			selected = e
+		}
+	}
+	if selected.ID == "" {
+		return nil, nil
+	}
+	return selected, nil
+}
+
+func SetEdition(ctx context.Context, e *domain.Edition) error {
+	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 
-	client = es
-
-	return nil
-}
-
-func Client() *elasticsearch.Client {
-	return client
-}
-
-func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
-	mu.RLock()
-	article, ok := articleCache[id]
-	if ok {
-		mu.RUnlock()
-		return &article, nil
-	}
-	mu.RUnlock()
-
-	req := esapi.GetRequest{
-		Index:      "articles",
-		DocumentID: id,
+	for _, a := range e.Articles {
+		err := SetArticle(ctx, &a)
+		if err != nil {
+			return errors.Wrap(err, "storing article: "+a.ID)
+		}
 	}
 
-	res, err := req.Do(ctx, client)
+	stored, err := editionToStored(e)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec("INSERT INTO editions (ID, Name, Date, StartTime, EndTime, Created, /* ... other fields ... */) VALUES (?, ?, ?, ?, ?, ?, /* ... other fields ... */)",
+		stored.ID, stored.Name, stored.Date, stored.StartTime, stored.EndTime, stored.Created, /* ... other fields ... */)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}
+
+
+func editionToStored(e *domain.Edition) (storedEdition, error) {
+	sources, err := json.Marshal(e.Sources)
+	if err != nil {
+		return storedEdition{}, err
+	}
+
+	articles, err := json.Marshal(e.Articles)
+	if err != nil {
+		return storedEdition{}, err
+	}
+
+	categories, err := json.Marshal(e.Categories)
+	if err != nil {
+		return storedEdition{}, err
+	}
+
+	metadata, err := json.Marshal(e.Metadata)
+	if err != nil {
+		return storedEdition{}, err
+	}
+
+	s := storedEdition{
+		ID:         e.ID,
+		Name:       e.Name,
+		Date:       e.Date,
+		Sources:    string(sources),
+		StartTime:  e.StartTime,
+		EndTime:    e.EndTime,
+		Created:    e.Created,
+		Categories: string(categories),
+		Metadata:   string(metadata),
+		Articles:   string(articles),
+	}
+
+	return s, nil
+}
+
+func editionFromStored(ctx context.Context, s storedEdition) (*domain.Edition, error) {
+	var sources []domain.Source
+	err := json.Unmarshal([]byte(s.Sources), &sources)
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
 
-	if res.IsError() {
-		return nil, errors.New(res.String())
+	var articles []string
+	err = json.Unmarshal([]byte(s.Articles), &articles)
+	if err != nil {
+		return nil, err
 	}
 
-	var a domain.Article
-	if err := json.NewDecoder(res.Body).Decode(&a); err != nil {
+	var categories []string
+	err = json.Unmarshal([]byte(s.Categories), &categories)
+	if err != nil {
+		return nil, err
+	}
+
+	var metadata map[string]string
+	err = json.Unmarshal([]byte(s.Metadata), &metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	e := domain.Edition{
+		ID:         s.ID,
+		Name:       s.Name,
+		Date:       s.Date,
+		Sources:    sources,
+		StartTime:  s.StartTime,
+		EndTime:    s.EndTime,
+		Created:    s.Created,
+		Categories: categories,
+		Metadata:   metadata,
+	}
+
+	e.Articles = make([]domain.Article, len(articles))
+	g := errgroup.Group{}
+	for i, id := range articles {
+		i, id := i, id
+		g.Go(func() error {
+			a, err := GetArticle(ctx, id)
+			if err != nil {
+				return err
+			}
+			e.Articles[i] = *a
+			return nil
+		})
+	}
+	return &e, g.Wait()
+}
+
+func GetEdition(ctx context.Context, id string) (*domain.Edition, error) {
+	row := db.QueryRow("SELECT * FROM editions WHERE ID = ?", id)
+
+	var s storedEdition
+	var sources, articles, categories, metadata string
+	err := row.Scan(&s.ID, &s.Name, &s.Date, &s.StartTime, &s.EndTime, &s.Created, &sources, &articles, &categories, &metadata)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No matching edition found
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var srcs []domain.Source
+	err = json.Unmarshal([]byte(sources), &srcs)
+	if err != nil {
+		return nil, err
+	}
+
+	var arts []string
+	err = json.Unmarshal([]byte(articles), &arts)
+	if err != nil {
+		return nil, err
+	}
+
+	var cats []string
+	err = json.Unmarshal([]byte(categories), &cats)
+	if err != nil {
+		return nil, err
+	}
+
+	var meta map[string]string
+	err = json.Unmarshal([]byte(metadata), &meta)
+	if err != nil {
+		return nil, err
+	}
+
+	e := domain.Edition{
+		ID:         s.ID,
+		Name:       s.Name,
+		Date:       s.Date,
+		Sources:    srcs,
+		StartTime:  s.StartTime,
+		EndTime:    s.EndTime,
+		Created:    s.Created,
+		Categories: cats,
+		Metadata:   meta,
+	}
+
+	e.Articles = make([]domain.Article, len(arts))
+	g := errgroup.Group{}
+	for i, id := range arts {
+		i, id := i, id
+		g.Go(func() error {
+			a, err := GetArticle(ctx, id)
+			if err != nil {
+				return err
+			}
+			e.Articles[i] = *a
+			return nil
+		})
+	}
+	err = g.Wait()
+	if err != nil {
+		return nil, err
+	}
+
+	return &e, nil
+}
+
+func SetArticle(ctx context.Context, a *domain.Article) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	// Convert the article to JSON
+	articleJson, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec("INSERT INTO articles (ID, Data) VALUES (?, ?) ON CONFLICT(ID) DO UPDATE SET Data = ?",
+		a.ID, articleJson, articleJson)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	mu.Lock()
+	delete(articleCache, a.ID)
+	mu.Unlock()
+
+	return tx.Commit()
+}
+func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
+	mu.RLock()
+	a, ok := articleCache[id]
+	if ok {
+		mu.RUnlock()
+		return &a, nil
+	}
+	mu.RUnlock()
+
+	row := db.QueryRow("SELECT Data FROM articles WHERE ID = ?", id)
+
+	var articleJson string
+	err := row.Scan(&articleJson)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No matching article found
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	a = domain.Article{}
+	err = json.Unmarshal([]byte(articleJson), &a)
+	if err != nil {
 		return nil, err
 	}
 
@@ -77,45 +352,146 @@ func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
 
 	return &a, nil
 }
+func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
+	row := db.QueryRow("SELECT Data FROM articles WHERE Link = ?", url)
 
-func SetArticle(ctx context.Context, a *domain.Article) error {
-	req := esapi.IndexRequest{
-		Index:      "articles",
-		DocumentID: a.ID,
-		Body:       strings.NewReader(a.Body),
-	}
-
-	res, err := req.Do(ctx, client)
+	var articleJson string
+	err := row.Scan(&articleJson)
 	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return errors.New(res.String())
-	}
-
-	return nil
-}
-
-func GetSource(ctx context.Context, id string) (*domain.Source, error) {
-	req := esapi.GetRequest{
-		Index:      "sources",
-		DocumentID: id,
+		if err == sql.ErrNoRows {
+			// No matching article found
+			return nil, nil
+		}
+		return nil, err
 	}
 
-	res, err := req.Do(ctx, client)
+	a := domain.Article{}
+	err = json.Unmarshal([]byte(articleJson), &a)
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
 
-	if res.IsError() {
-		return nil, errors.New(res.String())
+	mu.Lock()
+	articleCache[a.ID] = a
+	mu.Unlock()
+
+	return &a, nil
+}
+func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Article, error) {
+	rows, err := db.Query("SELECT Data FROM articles WHERE Timestamp > ? AND Timestamp < ? ORDER BY Timestamp", start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []domain.Article{}
+	for rows.Next() {
+		var articleJson string
+		err = rows.Scan(&articleJson)
+		if err != nil {
+			return nil, err
+		}
+
+		a := domain.Article{}
+		err = json.Unmarshal([]byte(articleJson), &a)
+		if err != nil {
+			return nil, err
+		}
+
+		mu.Lock()
+		articleCache[a.ID] = a
+		mu.Unlock()
+		out = append(out, a)
 	}
 
-	var s domain.Source
-	if err := json.NewDecoder(res.Body).Decode(&s); err != nil {
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func GetUser(ctx context.Context, id string) (*domain.User, error) {
+	row := db.QueryRow("SELECT Data FROM users WHERE ID = ?", id)
+
+	var userJson string
+	err := row.Scan(&userJson)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No matching user found
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	u := domain.User{}
+	err = json.Unmarshal([]byte(userJson), &u)
+	if err != nil {
+		return nil, err
+	}
+
+	return &u, nil
+}
+func SetUser(ctx context.Context, u *domain.User) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	// Convert the user to JSON
+	userJson, err := json.Marshal(u)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec("INSERT INTO users (ID, Data) VALUES (?, ?) ON CONFLICT(ID) DO UPDATE SET Data = ?",
+		u.ID, userJson, userJson)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func GetUserByName(ctx context.Context, name string) (*domain.User, error) {
+	row := db.QueryRow("SELECT Data FROM users WHERE Name = ?", name)
+
+	var userJson string
+	err := row.Scan(&userJson)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No matching user found
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	u := domain.User{}
+	err = json.Unmarshal([]byte(userJson), &u)
+	if err != nil {
+		return nil, err
+	}
+
+	return &u, nil
+}
+
+func GetSource(ctx context.Context, id string) (*domain.Source, error) {
+	row := db.QueryRow("SELECT Data FROM sources WHERE ID = ?", id)
+
+	var sourceJson string
+	err := row.Scan(&sourceJson)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No matching source found
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	s := domain.Source{}
+	err = json.Unmarshal([]byte(sourceJson), &s)
+	if err != nil {
 		return nil, err
 	}
 
@@ -123,378 +499,188 @@ func GetSource(ctx context.Context, id string) (*domain.Source, error) {
 }
 
 func SetSource(ctx context.Context, s *domain.Source) error {
-	req := esapi.IndexRequest{
-		Index:      "sources",
-		DocumentID: s.ID,
-		Body:       strings.NewReader(s.Body),
-	}
-
-	res, err := req.Do(ctx, client)
+	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
 
-	if res.IsError() {
-		return errors.New(res.String())
+	// Convert the source to JSON
+	sourceJson, err := json.Marshal(s)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	_, err = tx.Exec("INSERT INTO sources (ID, Data) VALUES (?, ?) ON CONFLICT(ID) DO UPDATE SET Data = ?",
+		s.ID, sourceJson, sourceJson)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func DeleteSource(ctx context.Context, id string) error {
-	req := esapi.DeleteRequest{
-		Index:      "sources",
-		DocumentID: id,
-	}
-
-	res, err := req.Do(ctx, client)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return errors.New(res.String())
-	}
-
-	return nil
+	_, err := db.Exec("DELETE FROM sources WHERE ID = ?", id)
+	return err
 }
 
-func GetSources(ctx context.Context) ([]*domain.Source, error) {
-	req := esapi.SearchRequest{
-		Index: []string{"sources"},
-		Body:  strings.NewReader(`{"query": {"match_all": {}}}`),
-	}
-
-	res, err := req.Do(ctx, client)
+func GetSources(ctx context.Context, ownerID string) ([]domain.Source, error) {
+	rows, err := db.Query("SELECT Data FROM sources WHERE OwnerID = ?", ownerID)
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer rows.Close()
 
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
-
-	var r map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return nil, err
-	}
-
-	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
-	sources := make([]*domain.Source, len(hits))
-	for i, hit := range hits {
-		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		sources[i] = &domain.Source{
-			ID:   source["id"].(string),
-			Body: source["body"].(string),
+	sources := []domain.Source{}
+	for rows.Next() {
+		var sourceJson string
+		err = rows.Scan(&sourceJson)
+		if err != nil {
+			return nil, err
 		}
+
+		s := domain.Source{}
+		err = json.Unmarshal([]byte(sourceJson), &s)
+		if err != nil {
+			return nil, err
+		}
+
+		sources = append(sources, s)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return sources, nil
 }
 
-func GetAllSources(ctx context.Context) ([]*domain.Source, error) {
-	req := esapi.SearchRequest{
-		Index: []string{"sources"},
-		Body:  strings.NewReader(`{"query": {"match_all": {}}}`),
-	}
-
-	res, err := req.Do(ctx, client)
+func GetAllSources(ctx context.Context) ([]domain.Source, error) {
+	rows, err := db.Query("SELECT Data FROM sources")
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
+	defer rows.Close()
 
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
-
-	var r map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return nil, err
-	}
-
-	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
-	sources := make([]*domain.Source, len(hits))
-	for i, hit := range hits {
-		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		sources[i] = &domain.Source{
-			ID:   source["id"].(string),
-			Body: source["body"].(string),
+	sources := []domain.Source{}
+	for rows.Next() {
+		var sourceJson string
+		err = rows.Scan(&sourceJson)
+		if err != nil {
+			return nil, err
 		}
+
+		s := domain.Source{}
+		err = json.Unmarshal([]byte(sourceJson), &s)
+		if err != nil {
+			return nil, err
+		}
+
+		sources = append(sources, s)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return sources, nil
 }
 
-func GetArticlesForOwner(ctx context.Context, owner string) ([]*domain.Article, error) {
-	req := esapi.SearchRequest{
-		Index: []string{"articles"},
-		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"match": {"owner": "%s"}}}`, owner)),
-	}
-
-	res, err := req.Do(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
-
-	var r map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return nil, err
-	}
-
-	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
-	articles := make([]*domain.Article, len(hits))
-	for i, hit := range hits {
-		article := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		articles[i] = &domain.Article{
-			ID:    article["id"].(string),
-			Title: article["title"].(string),
-			// Add other fields as necessary.
+func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Time) ([]domain.Article, []domain.Source, error) {
+	var (
+		sources []domain.Source
+		err     error
+	)
+	if ownerID != "" {
+		sources, err = GetSources(ctx, ownerID)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		sources, err = GetAllSources(ctx)
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 
-	return articles, nil
-}
+	out := []domain.Article{}
+	for _, s := range sources {
+		rows, err := db.Query("SELECT Data FROM articles WHERE Source.FeedURL = ? AND Timestamp > ? AND Timestamp < ? ORDER BY Timestamp", s.FeedURL, start, end)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer rows.Close()
 
-func GetEditionForTime(ctx context.Context, t time.Time) (*domain.Edition, error) {
-	req := esapi.SearchRequest{
-		Index: []string{"editions"},
-		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"range": {"time": {"gte": "%s"}}}}`, t.Format(time.RFC3339))),
-		Sort:  []string{"time:asc"},
-		Size:  1,
-	}
+		for rows.Next() {
+			var articleJson string
+			err = rows.Scan(&articleJson)
+			if err != nil {
+				return nil, nil, err
+			}
 
-	res, err := req.Do(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
+			a := domain.Article{}
+			err = json.Unmarshal([]byte(articleJson), &a)
+			if err != nil {
+				return nil, nil, err
+			}
 
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
+			out = append(out, a)
+		}
 
-	var r map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return nil, err
-	}
-
-	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
-	if len(hits) == 0 {
-		return nil, nil
-	}
-
-	edition := hits[0].(map[string]interface{})["_source"].(map[string]interface{})
-	return &domain.Edition{
-		ID: edition["id"].(string),
-		// Add other fields as necessary.
-	}, nil
-}
-
-func SetEdition(ctx context.Context, e *domain.Edition) error {
-	req := esapi.IndexRequest{
-		Index:      "editions",
-		DocumentID: e.ID,
-		Body:       strings.NewReader(e.Body),
-	}
-
-	res, err := req.Do(ctx, client)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return errors.New(res.String())
-	}
-
-	return nil
-}
-
-func GetEdition(ctx context.Context, id string) (*domain.Edition, error) {
-	req := esapi.GetRequest{
-		Index:      "editions",
-		DocumentID: id,
-	}
-
-	res, err := req.Do(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
-
-	var e domain.Edition
-	if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
-		return nil, err
-	}
-
-	return &e, nil
-}
-
-func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
-	req := esapi.SearchRequest{
-		Index: []string{"articles"},
-		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"match": {"url": "%s"}}}`, url)),
-		Size:  1,
-	}
-
-	res, err := req.Do(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
-
-	var r map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return nil, err
-	}
-
-	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
-	if len(hits) == 0 {
-		return nil, nil
-	}
-
-	article := hits[0].(map[string]interface{})["_source"].(map[string]interface{})
-	return &domain.Article{
-		ID:    article["id"].(string),
-		Title: article["title"].(string),
-		// Add other fields as necessary.
-	}, nil
-}
-
-func GetArticlesByTime(ctx context.Context, t time.Time) ([]*domain.Article, error) {
-	req := esapi.SearchRequest{
-		Index: []string{"articles"},
-		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"range": {"time": {"gte": "%s"}}}}`, t.Format(time.RFC3339))),
-		Sort:  []string{"time:asc"},
-	}
-
-	res, err := req.Do(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
-
-	var r map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return nil, err
-	}
-
-	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
-	articles := make([]*domain.Article, len(hits))
-	for i, hit := range hits {
-		article := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		articles[i] = &domain.Article{
-			ID:    article["id"].(string),
-			Title: article["title"].(string),
-			// Add other fields as necessary.
+		if err = rows.Err(); err != nil {
+			return nil, nil, err
 		}
 	}
 
-	return articles, nil
+	return out, sources, nil
+}
+type feedCache struct {
+	ttl time.Duration
 }
 
-func GetUser(ctx context.Context, id string) (*domain.User, error) {
-	req := esapi.GetRequest{
-		Index:      "users",
-		DocumentID: id,
-	}
-
-	res, err := req.Do(ctx, client)
+func (c *feedCache) Get(url string) ([]domain.Article, bool) {
+	rows, err := db.Query("SELECT Data FROM feed_cache WHERE URL = ?", url)
 	if err != nil {
-		return nil, err
+		return nil, false
 	}
-	defer res.Body.Close()
+	defer rows.Close()
 
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
-
-	var u domain.User
-	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
-		return nil, err
+	if !rows.Next() {
+		return nil, false
 	}
 
-	return &u, nil
+	var articlesJson string
+	err = rows.Scan(&articlesJson)
+	if err != nil {
+		return nil, false
+	}
+
+	as := []domain.Article{}
+	err = json.Unmarshal([]byte(articlesJson), &as)
+	if err != nil {
+		return nil, false
+	}
+
+	return as, true
 }
 
-func SetUser(ctx context.Context, u *domain.User) error {
-	userJSON, err := json.Marshal(u)
+func (c *feedCache) Set(url string, as []domain.Article) {
+	articlesJson, err := json.Marshal(as)
 	if err != nil {
-		return err
+		return
 	}
 
-	req := esapi.IndexRequest{
-		Index:      "users",
-		DocumentID: u.ID,
-		Body:       strings.NewReader(string(userJSON)),
-	}
-
-	res, err := req.Do(ctx, client)
+	_, err = db.Exec("INSERT INTO feed_cache (URL, Data, Expiry) VALUES (?, ?, ?) ON CONFLICT(URL) DO UPDATE SET Data = ?, Expiry = ?",
+		url, articlesJson, time.Now().Add(c.ttl), articlesJson, time.Now().Add(c.ttl))
 	if err != nil {
-		return err
+		return
 	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return errors.New(res.String())
-	}
-
-	return nil
 }
 
-func GetUserByName(ctx context.Context, name string) (*domain.User, error) {
-	req := esapi.SearchRequest{
-		Index: []string{"users"},
-		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"match": {"name": "%s"}}}`, name)),
-		Size:  1,
-	}
-
-	res, err := req.Do(ctx, client)
+func (c *feedCache) Delete(url string) {
+	_, err := db.Exec("DELETE FROM feed_cache WHERE URL = ?", url)
 	if err != nil {
-		return nil, err
+		return
 	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return nil, errors.New(res.String())
-	}
-
-	var r map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		return nil, err
-	}
-
-	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
-	if len(hits) == 0 {
-		return nil, nil
-	}
-
-	user := hits[0].(map[string]interface{})["_source"].(map[string]interface{})
-	return &domain.User{
-		ID:   user["id"].(string),
-		Name: user["name"].(string),
-		// Add other fields as necessary.
-	}, nil
 }
-

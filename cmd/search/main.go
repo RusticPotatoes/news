@@ -2,16 +2,14 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"flag"
-	"fmt"
 	"os"
-	"strings"
+	"time"
 
+	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/pkg/util"
-	"github.com/elastic/go-elasticsearch/v8"
-	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/monzo/slog"
+	// "github.com/pacedotdev/firesearch-sdk/clients/go/firesearch"
+	// secrets "google.golang.org/genproto/googleapis/cloud/secretmanager/v1beta1"
 )
 
 func main() {
@@ -22,61 +20,27 @@ func main() {
 	logger = util.ColourLogger{Writer: os.Stdout}
 	slog.SetDefaultLogger(logger)
 
-	es, err := elasticsearch.NewDefaultClient()
+	err := dao.Init(ctx)
 	if err != nil {
-		panic(err)
+		slog.Critical(ctx, "Error setting up dao: %s", err)
+		return
 	}
 
-	query := flag.String("q", "", "query")
-	flag.Parse()
+	articles, err := dao.GetArticlesByTime(ctx, time.Now().Add(-24*time.Hour), time.Now())
+	if err != nil {
+		slog.Critical(ctx, "Error getting articles: %s", err)
+		return
+	}
 
-	var buf strings.Builder
-	buf.WriteString(fmt.Sprintf(`{
-		"query": {
-			"multi_match" : {
-				"query":    "%s", 
-				"fields": [ "title", "content" ] 
+	for _, a := range articles {
+		a.RawHTML()
+		contentStr := ""
+		for _, e := range a.Content {
+			if e.Type != "text" {
+				continue
 			}
+			contentStr = contentStr + e.Value + ""
 		}
-	}`, *query))
-
-	req := esapi.SearchRequest{
-		Index: []string{"news"},
-		Body:  strings.NewReader(buf.String()),
-	}
-
-	res, err := req.Do(ctx, es)
-	if err != nil {
-		slog.Critical(ctx, "Error getting response: %s", err)
-		return
-	}
-	defer res.Body.Close()
-
-	// TODO: Parse the response body to get the search results.
-	var result map[string]interface{}
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		slog.Critical(ctx, "Error decoding response body: %s", err)
-		return
-	}
-
-	hits, ok := result["hits"].(map[string]interface{})["hits"].([]interface{})
-	if !ok {
-		slog.Critical(ctx, "Invalid response format")
-		return
-	}
-
-	for _, hit := range hits {
-		source, ok := hit.(map[string]interface{})["_source"].(map[string]interface{})
-		if !ok {
-			slog.Critical(ctx, "Invalid response format")
-			return
-		}
-
-		// Access the search result fields
-		title := source["title"].(string)
-		content := source["content"].(string)
-
-		// Process the search result
-		fmt.Printf("Title: %s\nContent: %s\n\n", title, content)
+		slog.Info(ctx, "Article: %s %s", a.Link)
 	}
 }
