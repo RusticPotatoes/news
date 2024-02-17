@@ -13,8 +13,8 @@ import (
 	"github.com/monzo/slog"
 	"github.com/nfnt/resize"
 
-	"github.com/arussellsaw/news/domain"
-	"github.com/arussellsaw/news/pkg/util"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/RusticPotatoes/news/pkg/util"
 )
 
 func handleDitherImage(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,23 @@
+# docker-compose.yml
+version: '3.8'
+services:
+
+  db:
+    image: postgres:13
+    build: ./sql
+    environment:
+      - POSTGRES_USER=sqladmin
+      - POSTGRES_PASSWORD=spersecretpassword
+      - POSTGRES_DB=news
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+      - "40000:40000"
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgres://postgres:password@db:5432/postgres?sslmode=disable

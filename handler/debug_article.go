@@ -2,11 +2,12 @@ package handler
 
 import (
 	"encoding/json"
-	"github.com/arussellsaw/news/dao"
-	"github.com/monzo/slog"
-	"github.com/thatguystone/swan"
 	"io/ioutil"
 	"net/http"
+
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/monzo/slog"
+	"github.com/thatguystone/swan"
 )
 
 func handleDebugArticle(w http.ResponseWriter, r *http.Request) {

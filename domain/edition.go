@@ -2,9 +2,10 @@ package domain
 
 import (
 	"context"
-	"github.com/arussellsaw/news/idgen"
 	"sync"
 	"time"
+
+	"github.com/RusticPotatoes/news/idgen"
 )
 
 var (

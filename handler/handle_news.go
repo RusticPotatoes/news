@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"github.com/arussellsaw/news/dao"
 	"html/template"
 	"net/http"
 	"regexp"
@@ -11,9 +10,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/RusticPotatoes/news/dao"
+
 	"github.com/monzo/slog"
 
-	"github.com/arussellsaw/news/domain"
+	"github.com/RusticPotatoes/news/domain"
 )
 
 type newsPage struct {

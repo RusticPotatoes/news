@@ -1,11 +1,15 @@
+# Makefile
 build:
-	docker build -t gcr.io/russellsaw/news --build-arg BUILDKIT_INLINE_CACHE=1 .
+	docker build -t news-app .
 
-deploy: build push
-	gcloud beta run deploy news --image gcr.io/russellsaw/news:latest
+run: build
+	docker run -p 8080:8080 -p 40000:40000 news-app
 
-deploy-worker: build push
-	gcloud beta run deploy news-background --image gcr.io/russellsaw/news:latest
+build-db:
+	docker build -t news-db ./sql
 
-push:
-	docker push gcr.io/russellsaw/news
+run-db: build-db
+	docker run -p 5432:5432 news-db
+
+up: build build-db
+	docker-compose up

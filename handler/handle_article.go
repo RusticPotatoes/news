@@ -1,13 +1,14 @@
 package handler
 
 import (
-	"github.com/arussellsaw/news/dao"
-	"github.com/arussellsaw/news/domain"
-	"github.com/monzo/slog"
 	"html/template"
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/monzo/slog"
 )
 
 func handleArticle(w http.ResponseWriter, r *http.Request) {

@@ -7,10 +7,10 @@ import (
 
 	"github.com/monzo/slog"
 
-	"github.com/arussellsaw/news/dao"
-	"github.com/arussellsaw/news/handler"
-	"github.com/arussellsaw/news/idgen"
-	"github.com/arussellsaw/news/pkg/util"
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/RusticPotatoes/news/handler"
+	"github.com/RusticPotatoes/news/idgen"
+	"github.com/RusticPotatoes/news/pkg/util"
 )
 
 func main() {
@@ -32,11 +32,11 @@ func main() {
 
 	slog.SetDefaultLogger(logger)
 
-	err = dao.Init(ctx)
-	if err != nil {
-		slog.Error(ctx, "error initialising dao: %s", err)
-		os.Exit(1)
-	}
+	// err = dao.Init(ctx)
+	// if err != nil {
+	// 	slog.Error(ctx, "error initialising dao: %s", err)
+	// 	os.Exit(1)
+	// }
 
 	var addr string
 	if os.Getenv("NEWS_ENV") == "debug" {

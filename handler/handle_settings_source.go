@@ -2,11 +2,12 @@ package handler
 
 import (
 	"fmt"
-	"github.com/arussellsaw/news/dao"
-	"github.com/arussellsaw/news/domain"
-	"github.com/arussellsaw/news/idgen"
 	"net/http"
 	"strings"
+
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/RusticPotatoes/news/idgen"
 )
 
 type sourceSettingsPage struct {

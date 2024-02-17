@@ -1,12 +1,11 @@
 package handler
 
 import (
-	"github.com/arussellsaw/news/dao"
-	"github.com/arussellsaw/news/domain"
-	"github.com/arussellsaw/news/idgen"
-	"github.com/monzo/slog"
 	"net/http"
 	"strings"
+
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/RusticPotatoes/news/idgen"
 )
 
 func handleAddSource(w http.ResponseWriter, r *http.Request) {
@@ -32,10 +31,10 @@ func handleAddSource(w http.ResponseWriter, r *http.Request) {
 		Categories: strings.Split(categories, ","),
 	}
 
-	err := dao.SetSource(ctx, &src)
-	if err != nil {
-		slog.Error(ctx, "Error storing source: %s", err)
-		http.Error(w, "error storing source", 500)
-	}
-	http.Redirect(w, r, "/settings", 307)
+	// err := dao.SetSource(ctx, &src)
+	// if err != nil {
+	// 	slog.Error(ctx, "Error storing source: %s", err)
+	// 	http.Error(w, "error storing source", 500)
+	// }
+	// http.Redirect(w, r, "/settings", 307)
 }

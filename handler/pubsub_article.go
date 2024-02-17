@@ -4,17 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/arussellsaw/news/dao"
-	"github.com/arussellsaw/news/idgen"
-	"github.com/monzo/slog"
-	"github.com/pacedotdev/firesearch-sdk/clients/go/firesearch"
-	"github.com/thatguystone/swan"
-	"golang.org/x/sync/semaphore"
 	"net/http"
 	"os/exec"
 	"strings"
 
-	"github.com/arussellsaw/news/domain"
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/RusticPotatoes/news/idgen"
+	"github.com/monzo/slog"
+	"github.com/pacedotdev/firesearch-sdk/clients/go/firesearch"
+	"github.com/thatguystone/swan"
+	"golang.org/x/sync/semaphore"
+
+	"github.com/RusticPotatoes/news/domain"
 )
 
 var (

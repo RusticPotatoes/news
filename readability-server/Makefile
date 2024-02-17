@@ -1,8 +1,5 @@
 build:
-	docker build -t gcr.io/russellsaw/readability-server --build-arg BUILDKIT_INLINE_CACHE=1 .
+	docker build -t readability-server .
 
-deploy: build push
-	gcloud beta run deploy readability-server --image gcr.io/russellsaw/readability-server:latest
-
-push:
-	docker push gcr.io/russellsaw/readability-server
+run: build
+	docker run -p 8080:8080 readability-server

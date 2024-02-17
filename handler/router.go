@@ -12,8 +12,8 @@ import (
 	secretmanager "cloud.google.com/go/secretmanager/apiv1beta1"
 	secrets "google.golang.org/genproto/googleapis/cloud/secretmanager/v1beta1"
 
-	"github.com/arussellsaw/news/domain"
-	"github.com/arussellsaw/news/pkg/util"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/RusticPotatoes/news/pkg/util"
 	"github.com/felixge/fgprof"
 
 	"github.com/gorilla/mux"

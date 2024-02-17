@@ -1,11 +1,12 @@
 package handler
 
 import (
-	"github.com/arussellsaw/news/dao"
-	"github.com/arussellsaw/news/domain"
-	"github.com/monzo/slog"
 	"html/template"
 	"net/http"
+
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/monzo/slog"
 )
 
 type settingsPage struct {

@@ -1,10 +1,11 @@
 package handler
 
 import (
-	"github.com/arussellsaw/news/dao"
-	"github.com/arussellsaw/news/domain"
-	"github.com/monzo/slog"
 	"net/http"
+
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/monzo/slog"
 )
 
 func handlePoll(w http.ResponseWriter, r *http.Request) {

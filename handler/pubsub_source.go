@@ -2,16 +2,17 @@ package handler
 
 import (
 	"encoding/json"
-	"github.com/arussellsaw/news/dao"
 	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/RusticPotatoes/news/dao"
+
 	"github.com/mmcdole/gofeed"
 	"github.com/monzo/slog"
 
-	"github.com/arussellsaw/news/domain"
+	"github.com/RusticPotatoes/news/domain"
 )
 
 var Prefix string

@@ -3,11 +3,12 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/arussellsaw/news/dao"
-	"github.com/monzo/slog"
-	"github.com/thatguystone/swan"
 	"net/http"
 	"net/url"
+
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/monzo/slog"
+	"github.com/thatguystone/swan"
 )
 
 func handleRefreshArticle(w http.ResponseWriter, r *http.Request) {

@@ -2,430 +2,499 @@ package dao
 
 import (
 	"context"
-	"github.com/monzo/slog"
-	"github.com/pkg/errors"
-	"golang.org/x/sync/errgroup"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
-	"cloud.google.com/go/firestore"
-	"github.com/arussellsaw/news/domain"
-	"google.golang.org/api/iterator"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 )
 
+// import "github.com/elastic/go-elasticsearch/v8"
+
 var (
-	client       *firestore.Client
+	client       *elasticsearch.Client
 	mu           sync.RWMutex
-	articleCache = make(map[string]domain.Article)
+	articleCache = make(map[string]*domain.Article)
 )
 
 func Init(ctx context.Context) error {
-	c, err := firestore.NewClient(ctx, "russellsaw")
+	cfg := elasticsearch.Config{
+		Addresses: []string{
+			"http://localhost:9200",
+		},
+	}
+	es, err := elasticsearch.NewClient(cfg)
 	if err != nil {
 		return err
 	}
 
-	client = c
+	client = es
 
 	return nil
 }
 
-type storedEdition struct {
-	ID         string
-	Name       string
-	Date       string
-	StartTime  time.Time
-	EndTime    time.Time
-	Created    time.Time
-	Sources    []domain.Source
-	Articles   []string
-	Categories []string
-	Metadata   map[string]string
-}
-
-func Client() *firestore.Client {
+func Client() *elasticsearch.Client {
 	return client
-}
-
-func GetEditionForTime(ctx context.Context, t time.Time, allowRecent bool) (*domain.Edition, error) {
-	iter := client.Collection("editions").
-		Where("EndTime", ">", t).
-		Documents(ctx)
-	candidates := []*domain.Edition{}
-	var maxEdition storedEdition
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		s := storedEdition{}
-		err = doc.DataTo(&s)
-		if err != nil {
-			return nil, err
-		}
-		if s.EndTime.After(maxEdition.EndTime) {
-			maxEdition = s
-		}
-		if s.EndTime.After(t) {
-			e, err := editionFromStored(ctx, s)
-			if err != nil {
-				return nil, err
-			}
-			candidates = append(candidates, e)
-		}
-	}
-	if len(candidates) == 0 {
-		if maxEdition.ID != "" && allowRecent {
-			return editionFromStored(ctx, maxEdition)
-		}
-	}
-
-	selected := &domain.Edition{}
-	for _, e := range candidates {
-		if e.Created.After(selected.Created) {
-			selected = e
-		}
-	}
-	if selected.ID == "" {
-		return nil, nil
-	}
-	return selected, nil
-}
-
-func SetEdition(ctx context.Context, e *domain.Edition) error {
-	for _, a := range e.Articles {
-		err := SetArticle(ctx, &a)
-		if err != nil {
-			return errors.Wrap(err, "storing article: "+a.ID)
-		}
-	}
-	stored := editionToStored(e)
-	_, err := client.Collection("editions").Doc(e.ID).Set(ctx, stored)
-	return err
-}
-
-func editionToStored(e *domain.Edition) storedEdition {
-	s := storedEdition{
-		ID:         e.ID,
-		Name:       e.Name,
-		Date:       e.Date,
-		Sources:    e.Sources,
-		StartTime:  e.StartTime,
-		EndTime:    e.EndTime,
-		Created:    e.Created,
-		Categories: e.Categories,
-		Metadata:   e.Metadata,
-	}
-
-	var IDs []string
-	for _, a := range e.Articles {
-		IDs = append(IDs, a.ID)
-	}
-	s.Articles = IDs
-	return s
-}
-
-func editionFromStored(ctx context.Context, s storedEdition) (*domain.Edition, error) {
-	e := domain.Edition{
-		ID:         s.ID,
-		Name:       s.Name,
-		Date:       s.Date,
-		Sources:    s.Sources,
-		StartTime:  s.StartTime,
-		EndTime:    s.EndTime,
-		Created:    s.Created,
-		Categories: s.Categories,
-		Metadata:   s.Metadata,
-	}
-	e.Articles = make([]domain.Article, len(s.Articles))
-	g := errgroup.Group{}
-	for i, id := range s.Articles {
-		i, id := i, id
-		g.Go(func() error {
-			a, err := GetArticle(ctx, id)
-			if err != nil {
-				return err
-			}
-			e.Articles[i] = *a
-			return nil
-		})
-	}
-	return &e, g.Wait()
-}
-
-func GetEdition(ctx context.Context, id string) (*domain.Edition, error) {
-	d, err := client.Collection("editions").Doc(id).Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	s := storedEdition{}
-	err = d.DataTo(&s)
-	if err != nil {
-		return nil, err
-	}
-	e, err := editionFromStored(ctx, s)
-	return e, err
-}
-
-func SetArticle(ctx context.Context, a *domain.Article) error {
-	_, err := client.Collection("articles").Doc(a.ID).Set(ctx, a)
-	mu.Lock()
-	delete(articleCache, a.ID)
-	mu.Unlock()
-	return err
 }
 
 func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
 	mu.RLock()
-	a, ok := articleCache[id]
+	article, ok := articleCache[id]
 	if ok {
 		mu.RUnlock()
-		return &a, nil
+		return &article, nil
 	}
 	mu.RUnlock()
 
-	d, err := client.Collection("articles").Doc(id).Get(ctx)
+	req := esapi.GetRequest{
+		Index:      "articles",
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, client)
 	if err != nil {
 		return nil, err
 	}
-	a = domain.Article{}
-	err = d.DataTo(&a)
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var a domain.Article
+	if err := json.NewDecoder(res.Body).Decode(&a); err != nil {
+		return nil, err
+	}
+
 	mu.Lock()
 	articleCache[a.ID] = a
 	mu.Unlock()
-	return &a, err
+
+	return &a, nil
 }
 
-func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
-	iter := client.Collection("articles").Where("Link", "==", url).Documents(ctx)
-	docs, err := iter.GetAll()
+func SetArticle(ctx context.Context, a *domain.Article) error {
+	req := esapi.IndexRequest{
+		Index:      "articles",
+		DocumentID: a.ID,
+		Body:       strings.NewReader(a.Body),
+	}
+
+	res, err := req.Do(ctx, client)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if len(docs) == 0 {
-		return nil, nil
-	}
-	a := domain.Article{}
-	err = docs[0].DataTo(&a)
-	mu.Lock()
-	articleCache[a.ID] = a
-	mu.Unlock()
-	return &a, err
-}
+	defer res.Body.Close()
 
-func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Article, error) {
-	iter := client.Collection("articles").
-		Where("Timestamp", ">", start).
-		Where("Timestamp", "<", end).
-		Documents(ctx)
-	docs, err := iter.GetAll()
-	if err != nil {
-		return nil, err
+	if res.IsError() {
+		return errors.New(res.String())
 	}
 
-	out := []domain.Article{}
-	for _, doc := range docs {
-		a := domain.Article{}
-		err = doc.DataTo(&a)
-		mu.Lock()
-		articleCache[a.ID] = a
-		mu.Unlock()
-		out = append(out, a)
-	}
-	return out, nil
-}
-
-func GetUser(ctx context.Context, id string) (*domain.User, error) {
-	d, err := client.Collection("users").Doc(id).Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	u := domain.User{}
-	err = d.DataTo(&u)
-	return &u, err
-}
-
-func SetUser(ctx context.Context, u *domain.User) error {
-	_, err := client.Collection("users").Doc(u.ID).Set(ctx, u)
-	return err
-}
-
-func GetUserByName(ctx context.Context, name string) (*domain.User, error) {
-	iter := client.Collection("users").Where("Name", "==", name).Documents(ctx)
-	docs, err := iter.GetAll()
-	if err != nil {
-		return nil, err
-	}
-	if len(docs) == 0 {
-		return nil, nil
-	}
-	u := domain.User{}
-	err = docs[0].DataTo(&u)
-	return &u, err
+	return nil
 }
 
 func GetSource(ctx context.Context, id string) (*domain.Source, error) {
-	d, err := client.Collection("sources").Doc(id).Get(ctx)
+	req := esapi.GetRequest{
+		Index:      "sources",
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, client)
 	if err != nil {
 		return nil, err
 	}
-	s := domain.Source{}
-	err = d.DataTo(&s)
-	return &s, err
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var s domain.Source
+	if err := json.NewDecoder(res.Body).Decode(&s); err != nil {
+		return nil, err
+	}
+
+	return &s, nil
 }
 
 func SetSource(ctx context.Context, s *domain.Source) error {
-	_, err := client.Collection("sources").Doc(s.ID).Set(ctx, s)
-	return err
+	req := esapi.IndexRequest{
+		Index:      "sources",
+		DocumentID: s.ID,
+		Body:       strings.NewReader(s.Body),
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return errors.New(res.String())
+	}
+
+	return nil
 }
 
 func DeleteSource(ctx context.Context, id string) error {
-	_, err := client.Collection("sources").Doc(id).Delete(ctx)
-	return err
+	req := esapi.DeleteRequest{
+		Index:      "sources",
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return errors.New(res.String())
+	}
+
+	return nil
 }
 
-func GetSources(ctx context.Context, ownerID string) ([]domain.Source, error) {
-	iter := client.Collection("sources").Where("OwnerID", "==", ownerID).Documents(ctx)
-	docs, err := iter.GetAll()
+func GetSources(ctx context.Context) ([]*domain.Source, error) {
+	req := esapi.SearchRequest{
+		Index: []string{"sources"},
+		Body:  strings.NewReader(`{"query": {"match_all": {}}}`),
+	}
+
+	res, err := req.Do(ctx, client)
 	if err != nil {
 		return nil, err
 	}
-	if len(docs) == 0 {
-		return nil, nil
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
 	}
-	sources := make([]domain.Source, 0, len(docs))
-	for _, doc := range docs {
-		s := domain.Source{}
-		err = doc.DataTo(&s)
-		if err != nil {
-			return nil, err
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+
+	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
+	sources := make([]*domain.Source, len(hits))
+	for i, hit := range hits {
+		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
+		sources[i] = &domain.Source{
+			ID:   source["id"].(string),
+			Body: source["body"].(string),
 		}
-		sources = append(sources, s)
 	}
+
 	return sources, nil
 }
 
-func GetAllSources(ctx context.Context) ([]domain.Source, error) {
-	iter := client.Collection("sources").Documents(ctx)
-	docs, err := iter.GetAll()
+func GetAllSources(ctx context.Context) ([]*domain.Source, error) {
+	req := esapi.SearchRequest{
+		Index: []string{"sources"},
+		Body:  strings.NewReader(`{"query": {"match_all": {}}}`),
+	}
+
+	res, err := req.Do(ctx, client)
 	if err != nil {
 		return nil, err
 	}
-	if len(docs) == 0 {
-		return nil, nil
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
 	}
-	sources := make([]domain.Source, 0, len(docs))
-	for _, doc := range docs {
-		s := domain.Source{}
-		err = doc.DataTo(&s)
-		if err != nil {
-			return nil, err
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+
+	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
+	sources := make([]*domain.Source, len(hits))
+	for i, hit := range hits {
+		source := hit.(map[string]interface{})["_source"].(map[string]interface{})
+		sources[i] = &domain.Source{
+			ID:   source["id"].(string),
+			Body: source["body"].(string),
 		}
-		sources = append(sources, s)
 	}
+
 	return sources, nil
 }
 
-func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Time) ([]domain.Article, []domain.Source, error) {
-	var (
-		sources []domain.Source
-		err     error
-	)
-	if ownerID != "" {
-		sources, err = GetSources(ctx, ownerID)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		sources = domain.GetSources()
+func GetArticlesForOwner(ctx context.Context, owner string) ([]*domain.Article, error) {
+	req := esapi.SearchRequest{
+		Index: []string{"articles"},
+		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"match": {"owner": "%s"}}}`, owner)),
 	}
-	g := errgroup.Group{}
-	articles := make(chan domain.Article)
-	for _, s := range sources {
-		s := s
-		if as, ok := c.Get(s.FeedURL); ok {
-			as := as
-			g.Go(func() error {
-				for _, a := range as {
-					articles <- a
-				}
-				return nil
-			})
-			continue
-		}
-		g.Go(func() error {
-			docs, err := client.Collection("articles").
-				Where("Source.FeedURL", "==", s.FeedURL).
-				Where("Timestamp", ">", start).
-				Where("Timestamp", "<", end).
-				Documents(ctx).
-				GetAll()
-			if err != nil {
-				return err
-			}
-			toCache := []domain.Article{}
-			for _, doc := range docs {
-				a := domain.Article{}
-				err = doc.DataTo(&a)
-				if err != nil {
-					return err
-				}
-				toCache = append(toCache, a)
-				slog.Debug(ctx, "Article loaded: %s %s", a.Title, a.Source.FeedURL)
-				articles <- a
-			}
-			c.Set(s.FeedURL, toCache)
-			return nil
-		})
-	}
-	go func() {
-		err = g.Wait()
-		close(articles)
-	}()
-	out := []domain.Article{}
-	for article := range articles {
-		out = append(out, article)
-	}
+
+	res, err := req.Do(ctx, client)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return out, sources, nil
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+
+	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
+	articles := make([]*domain.Article, len(hits))
+	for i, hit := range hits {
+		article := hit.(map[string]interface{})["_source"].(map[string]interface{})
+		articles[i] = &domain.Article{
+			ID:    article["id"].(string),
+			Title: article["title"].(string),
+			// Add other fields as necessary.
+		}
+	}
+
+	return articles, nil
 }
 
-var c = feedCache{
-	c:   make(map[string][]domain.Article),
-	ttl: 20 * time.Minute,
+func GetEditionForTime(ctx context.Context, t time.Time) (*domain.Edition, error) {
+	req := esapi.SearchRequest{
+		Index: []string{"editions"},
+		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"range": {"time": {"gte": "%s"}}}}`, t.Format(time.RFC3339))),
+		Sort:  []string{"time:asc"},
+		Size:  1,
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+
+	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
+	if len(hits) == 0 {
+		return nil, nil
+	}
+
+	edition := hits[0].(map[string]interface{})["_source"].(map[string]interface{})
+	return &domain.Edition{
+		ID: edition["id"].(string),
+		// Add other fields as necessary.
+	}, nil
 }
 
-type feedCache struct {
-	mu sync.RWMutex
-	c  map[string][]domain.Article
+func SetEdition(ctx context.Context, e *domain.Edition) error {
+	req := esapi.IndexRequest{
+		Index:      "editions",
+		DocumentID: e.ID,
+		Body:       strings.NewReader(e.Body),
+	}
 
-	ttl time.Duration
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return errors.New(res.String())
+	}
+
+	return nil
 }
 
-func (c *feedCache) Get(url string) ([]domain.Article, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	as, ok := c.c[url]
-	return as, ok
+func GetEdition(ctx context.Context, id string) (*domain.Edition, error) {
+	req := esapi.GetRequest{
+		Index:      "editions",
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var e domain.Edition
+	if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
+		return nil, err
+	}
+
+	return &e, nil
 }
 
-func (c *feedCache) Set(url string, as []domain.Article) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.c[url] = as
-	go func(url string, ttl time.Duration) {
-		<-time.After(ttl)
-		c.Delete(url)
-	}(url, c.ttl)
+func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
+	req := esapi.SearchRequest{
+		Index: []string{"articles"},
+		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"match": {"url": "%s"}}}`, url)),
+		Size:  1,
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+
+	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
+	if len(hits) == 0 {
+		return nil, nil
+	}
+
+	article := hits[0].(map[string]interface{})["_source"].(map[string]interface{})
+	return &domain.Article{
+		ID:    article["id"].(string),
+		Title: article["title"].(string),
+		// Add other fields as necessary.
+	}, nil
 }
 
-func (c *feedCache) Delete(url string) {
-	c.mu.Lock()
-	delete(c.c, url)
-	c.mu.Unlock()
+func GetArticlesByTime(ctx context.Context, t time.Time) ([]*domain.Article, error) {
+	req := esapi.SearchRequest{
+		Index: []string{"articles"},
+		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"range": {"time": {"gte": "%s"}}}}`, t.Format(time.RFC3339))),
+		Sort:  []string{"time:asc"},
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+
+	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
+	articles := make([]*domain.Article, len(hits))
+	for i, hit := range hits {
+		article := hit.(map[string]interface{})["_source"].(map[string]interface{})
+		articles[i] = &domain.Article{
+			ID:    article["id"].(string),
+			Title: article["title"].(string),
+			// Add other fields as necessary.
+		}
+	}
+
+	return articles, nil
 }
+
+func GetUser(ctx context.Context, id string) (*domain.User, error) {
+	req := esapi.GetRequest{
+		Index:      "users",
+		DocumentID: id,
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var u domain.User
+	if err := json.NewDecoder(res.Body).Decode(&u); err != nil {
+		return nil, err
+	}
+
+	return &u, nil
+}
+
+func SetUser(ctx context.Context, u *domain.User) error {
+	userJSON, err := json.Marshal(u)
+	if err != nil {
+		return err
+	}
+
+	req := esapi.IndexRequest{
+		Index:      "users",
+		DocumentID: u.ID,
+		Body:       strings.NewReader(string(userJSON)),
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return errors.New(res.String())
+	}
+
+	return nil
+}
+
+func GetUserByName(ctx context.Context, name string) (*domain.User, error) {
+	req := esapi.SearchRequest{
+		Index: []string{"users"},
+		Body:  strings.NewReader(fmt.Sprintf(`{"query": {"match": {"name": "%s"}}}`, name)),
+		Size:  1,
+	}
+
+	res, err := req.Do(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, errors.New(res.String())
+	}
+
+	var r map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return nil, err
+	}
+
+	hits := r["hits"].(map[string]interface{})["hits"].([]interface{})
+	if len(hits) == 0 {
+		return nil, nil
+	}
+
+	user := hits[0].(map[string]interface{})["_source"].(map[string]interface{})
+	return &domain.User{
+		ID:   user["id"].(string),
+		Name: user["name"].(string),
+		// Add other fields as necessary.
+	}, nil
+}
+

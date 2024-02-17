@@ -1,15 +1,17 @@
 package main
 
 import (
-	secretmanager "cloud.google.com/go/secretmanager/apiv1beta1"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/arussellsaw/news/pkg/util"
-	"github.com/monzo/slog"
-	"github.com/pacedotdev/firesearch-sdk/clients/go/firesearch"
-	secrets "google.golang.org/genproto/googleapis/cloud/secretmanager/v1beta1"
 	"os"
+	"strings"
+
+	"github.com/RusticPotatoes/news/pkg/util"
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/monzo/slog"
 )
 
 func main() {
@@ -20,49 +22,61 @@ func main() {
 	logger = util.ColourLogger{Writer: os.Stdout}
 	slog.SetDefaultLogger(logger)
 
-	sm, err := secretmanager.NewClient(ctx)
+	es, err := elasticsearch.NewDefaultClient()
 	if err != nil {
 		panic(err)
 	}
-	defer sm.Close()
-
-	res, err := sm.AccessSecretVersion(
-		ctx,
-		&secrets.AccessSecretVersionRequest{Name: fmt.Sprintf(
-			"projects/266969078315/secrets/%s/versions/latest",
-			"FIRESEARCH_API_KEY",
-		)},
-	)
-	if err != nil {
-		panic(err)
-	}
-	slog.Info(ctx, res.Payload.String())
-	client := firesearch.NewClient("https://firesearch-3phpehgkya-ew.a.run.app/api", res.Payload.String())
-	indexService := firesearch.NewIndexService(client)
 
 	query := flag.String("q", "", "query")
 	flag.Parse()
-	searchResults, err := indexService.Search(ctx, firesearch.SearchRequest{
-		Query: firesearch.SearchQuery{
-			IndexPath: "news/search/articles",
-			Limit:     5,
-			Text:      *query,
-			Select:    []string{"title", "content"},
-		},
-	})
+
+	var buf strings.Builder
+	buf.WriteString(fmt.Sprintf(`{
+		"query": {
+			"multi_match" : {
+				"query":    "%s", 
+				"fields": [ "title", "content" ] 
+			}
+		}
+	}`, *query))
+
+	req := esapi.SearchRequest{
+		Index: []string{"news"},
+		Body:  strings.NewReader(buf.String()),
+	}
+
+	res, err := req.Do(ctx, es)
 	if err != nil {
-		slog.Critical(ctx, "Error searching: %s", err)
+		slog.Critical(ctx, "Error getting response: %s", err)
 		return
 	}
-	for _, hit := range searchResults.Hits {
-		title, ok := hit.FieldValue("title")
+	defer res.Body.Close()
+
+	// TODO: Parse the response body to get the search results.
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		slog.Critical(ctx, "Error decoding response body: %s", err)
+		return
+	}
+
+	hits, ok := result["hits"].(map[string]interface{})["hits"].([]interface{})
+	if !ok {
+		slog.Critical(ctx, "Invalid response format")
+		return
+	}
+
+	for _, hit := range hits {
+		source, ok := hit.(map[string]interface{})["_source"].(map[string]interface{})
 		if !ok {
-			title = "Untitled"
+			slog.Critical(ctx, "Invalid response format")
+			return
 		}
-		fmt.Printf("\t%s: %s:", hit.ID, title)
-		for _, highlight := range hit.Highlights {
-			fmt.Print(" " + highlight.Text)
-		}
-		fmt.Println()
+
+		// Access the search result fields
+		title := source["title"].(string)
+		content := source["content"].(string)
+
+		// Process the search result
+		fmt.Printf("Title: %s\nContent: %s\n\n", title, content)
 	}
 }

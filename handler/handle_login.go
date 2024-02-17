@@ -2,14 +2,15 @@ package handler
 
 import (
 	"fmt"
-	"github.com/arussellsaw/news/dao"
-	"github.com/arussellsaw/news/domain"
-	"github.com/arussellsaw/news/idgen"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/monzo/slog"
 	"html/template"
 	"net/http"
 	"os"
+
+	"github.com/RusticPotatoes/news/dao"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/RusticPotatoes/news/idgen"
+	"github.com/dgrijalva/jwt-go"
+	"github.com/monzo/slog"
 )
 
 type loginPage struct {

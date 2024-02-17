@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"github.com/dgrijalva/jwt-go"
 	"os"
 	"time"
 
-	"github.com/arussellsaw/news/idgen"
+	"github.com/dgrijalva/jwt-go"
+
+	"github.com/RusticPotatoes/news/idgen"
 )
 
 func NewUser(ctx context.Context, name, password string) *User {
