@@ -4,8 +4,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/domain"
 	"github.com/RusticPotatoes/news/idgen"
+	"github.com/monzo/slog"
 )
 
 func handleAddSource(w http.ResponseWriter, r *http.Request) {
@@ -31,10 +33,10 @@ func handleAddSource(w http.ResponseWriter, r *http.Request) {
 		Categories: strings.Split(categories, ","),
 	}
 
-	// err := dao.SetSource(ctx, &src)
-	// if err != nil {
-	// 	slog.Error(ctx, "Error storing source: %s", err)
-	// 	http.Error(w, "error storing source", 500)
-	// }
-	// http.Redirect(w, r, "/settings", 307)
+	err := dao.SetSource(ctx, &src)
+	if err != nil {
+		slog.Error(ctx, "Error storing source: %s", err)
+		http.Error(w, "error storing source", 500)
+	}
+	http.Redirect(w, r, "/settings", 307)
 }
