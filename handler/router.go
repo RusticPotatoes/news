@@ -2,15 +2,9 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/cookiejar"
-	"os"
-
-	"cloud.google.com/go/profiler"
-	secretmanager "cloud.google.com/go/secretmanager/apiv1beta1"
-	secrets "google.golang.org/genproto/googleapis/cloud/secretmanager/v1beta1"
 
 	"github.com/RusticPotatoes/news/domain"
 	"github.com/RusticPotatoes/news/pkg/util"
@@ -56,21 +50,21 @@ func Init(ctx context.Context) http.Handler {
 	m.Handle("/settings/source", genericHandler("tmpl/settings_source.html", sourceSettingsData))
 	m.Handle("/search", genericHandler("tmpl/search.html", handleSearch))
 	m.Handle("/debug/fgprof", fgprof.Handler())
-	cfg := profiler.Config{
-		Service:        "news",
-		ServiceVersion: "1.0.0",
-		ProjectID:      "russellsaw",
+	// cfg := profiler.Config{
+	// 	Service:        "news",
+	// 	ServiceVersion: "1.0.0",
+	// 	ProjectID:      "russellsaw",
 
-		// For OpenCensus users:
-		// To see Profiler agent spans in APM backend,
-		// set EnableOCTelemetry to true
-		// EnableOCTelemetry: true,
-	}
+	// 	// For OpenCensus users:
+	// 	// To see Profiler agent spans in APM backend,
+	// 	// set EnableOCTelemetry to true
+	// 	// EnableOCTelemetry: true,
+	// }
 
-	// Profiler initialization, best done as early as possible.
-	if err := profiler.Start(cfg); err != nil {
-		panic(err)
-	}
+	// // Profiler initialization, best done as early as possible.
+	// if err := profiler.Start(cfg); err != nil {
+	// 	panic(err)
+	// }
 
 	h := util.CloudContextMiddleware(
 		util.HTTPLogParamsMiddleware(
@@ -80,40 +74,40 @@ func Init(ctx context.Context) http.Handler {
 
 	h = sessionMiddleware(h)
 
-	var err error
+	// var err error
 
-	if os.Getenv("USER") == "alexrussell-saw" {
-		slog.Info(ctx, "Using HTTP Publisher")
-		p = &domain.HTTPPublisher{
-			SourceURL:  "http://localhost:8080/events/source",
-			ArticleURL: "http://localhost:8080/events/article",
-		}
-	} else {
-		slog.Info(ctx, "Using PubSub Publisher")
-		p, err = domain.NewPubSubPublisher(ctx)
-		if err != nil {
-			panic(err)
-		}
+	// if os.Getenv("USER") == "alexrussell-saw" {
+	slog.Info(ctx, "Using HTTP Publisher")
+	p = &domain.HTTPPublisher{
+		SourceURL:  "http://localhost:8080/events/source",
+		ArticleURL: "http://localhost:8080/events/article",
 	}
+	// } else {
+	// 	slog.Info(ctx, "Using PubSub Publisher")
+	// 	p, err = domain.NewPubSubPublisher(ctx)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// }
 
-	sm, err := secretmanager.NewClient(ctx)
-	if err != nil {
-		panic(err)
-	}
-	defer sm.Close()
+	// sm, err := secretmanager.NewClient(ctx)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer sm.Close()
 
-	res, err := sm.AccessSecretVersion(
-		ctx,
-		&secrets.AccessSecretVersionRequest{Name: fmt.Sprintf(
-			"projects/266969078315/secrets/%s/versions/latest",
-			"FIRESEARCH_API_KEY",
-		)},
-	)
-	if err != nil {
-		panic(err)
-	}
-	client = firesearch.NewClient("https://firesearch-3phpehgkya-ew.a.run.app/api", res.Payload.String())
-	indexService = firesearch.NewIndexService(client)
+	// res, err := sm.AccessSecretVersion(
+	// 	ctx,
+	// 	&secrets.AccessSecretVersionRequest{Name: fmt.Sprintf(
+	// 		"projects/266969078315/secrets/%s/versions/latest",
+	// 		"FIRESEARCH_API_KEY",
+	// 	)},
+	// )
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// client = firesearch.NewClient("https://firesearch-3phpehgkya-ew.a.run.app/api", res.Payload.String())
+	// indexService = firesearch.NewIndexService(client)
 
 	return h
 }

@@ -1,15 +1,21 @@
 # Makefile
+setup:
+	go install github.com/go-delve/delve/cmd/dlv@v1.20.0
+	go mod download
+	go mod vendor
+	go mod tidy
+
 build:
-	docker build -t news-app .
+	docker build --progress=plain -t news-app .
 
-run: build
-	docker run -p 8080:8080 -p 40000:40000 news-app
+run:
+	docker run -p 8080:8080 news-app
 
-build-db:
-	docker build -t news-db ./sql
+buildrun: build
+	docker run -p 8080:8080 news-app
 
-run-db: build-db
-	docker run -p 5432:5432 news-db
-
-up: build build-db
+up:
 	docker-compose up
+
+buildup: build
+	docker-compose up --build

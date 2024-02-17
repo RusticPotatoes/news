@@ -12,6 +12,7 @@ import (
 	"database/sql"
 
 	"github.com/RusticPotatoes/news/domain"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var (
@@ -22,7 +23,7 @@ var (
 
 func Init(ctx context.Context) error {
 	var err error
-	db, err = sql.Open("sqlite3", "./editions.db")
+	db, err = sql.Open("sqlite3", "./data/editions.db")
 	return err
 }
 

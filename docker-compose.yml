@@ -4,10 +4,10 @@ services:
 
   app:
     build: .
+    container_name: news_app
     ports:
       - "8080:8080"
-      - "40000:40000"
     volumes:
       - ./data:/app/data
     environment:
-      - DATABASE_URL=sqlite:///app/data/mydatabase.db
+      - DATABASE_URL=sqlite:///app/data/editions.db

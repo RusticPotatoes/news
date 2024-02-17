@@ -12,7 +12,6 @@ require (
 	github.com/boombuler/barcode v1.0.0
 	github.com/bwmarrin/snowflake v0.3.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
-	github.com/elastic/go-elasticsearch/v8 v8.12.0
 	github.com/esimov/dithergo v0.0.0-20200421032300-a58c8e84d6b1
 	github.com/fatih/color v1.10.0
 	github.com/fatih/set v0.2.1
@@ -33,12 +32,11 @@ require (
 	google.golang.org/genproto v0.0.0-20201210142538-e3217bee35cc
 )
 
+require github.com/mattn/go-sqlite3 v1.14.22
+
 require (
 	github.com/andybalholm/cascadia v1.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/elastic/elastic-transport-go/v8 v8.4.0 // indirect
-	github.com/go-logr/logr v1.3.0 // indirect
-	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -62,9 +60,6 @@ require (
 	github.com/tdewolff/minify/v2 v2.9.10 // indirect
 	github.com/tdewolff/parse/v2 v2.5.6 // indirect
 	go.opencensus.io v0.22.5 // indirect
-	go.opentelemetry.io/otel v1.21.0 // indirect
-	go.opentelemetry.io/otel/metric v1.21.0 // indirect
-	go.opentelemetry.io/otel/trace v1.21.0 // indirect
 	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
 	golang.org/x/mod v0.4.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5 // indirect

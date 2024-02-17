@@ -25,7 +25,7 @@ func main() {
 	var logger slog.Logger
 	logger = util.ContextParamLogger{Logger: &util.StackDriverLogger{}}
 
-	if os.Getenv("USER") == "alexrussell-saw" {
+	if os.Getenv("USER") == "rustic" {
 		logger = util.ColourLogger{Writer: os.Stdout}
 		handler.Prefix = "dev-"
 	}
