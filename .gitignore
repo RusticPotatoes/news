@@ -6,6 +6,13 @@ news
 *.a
 *.so
 
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
 # Folders
 _obj
 _test

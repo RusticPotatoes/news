@@ -1,0 +1,22 @@
+{{ define "content" }}
+	<div class="article-page">
+		<a href="{{.Article.Link}}">
+			<div class="overline"></div>
+			<div style="width: 100%; text-align: left; word-wrap: break-spaces">
+				<h2>{{.Article.Title}}</h2>
+			</div>
+			<div class="underline"></div>
+			<p class="is-size-5 has-text-weight-bold">{{.Article.Source.Name}} - {{.Article.TS}}</p>
+		</a>
+		<div style="margin-top: 2rem;">
+			<div class="article-content">
+				{{ .Article.RawHTML }}
+			</div>
+		</div>
+		{{if .User}}
+		{{if .User.IsAdmin }}
+			<a href="/article/refresh?id={{.Article.ID}}">Refresh</a>
+		{{end}}
+		{{end}}
+	</div>
+{{ end }}
