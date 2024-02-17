@@ -1,10 +1,19 @@
 # Dockerfile
-FROM golang:1.16-buster AS build
+FROM golang:1.20-buster AS build
 # Enable Go modules
 ENV GO111MODULE=on
-RUN go install github.com/go-delve/delve/cmd/dlv@v1.7.1
+
 COPY . /src/news
 WORKDIR /src/news
+RUN go mod download
+RUN go mod vendor
+# RUN go get github.com/RusticPotatoes/news/dao  
+# RUN go get github.com/RusticPotatoes/news/handler
+# RUN go get github.com/RusticPotatoes/news/model
+# RUN go get github.com/RusticPotatoes/news/service
+# RUN go get github.com/RusticPotatoes/news/util
+# RUN go get github.com/RusticPotatoes/news/idgn
+# RUN go get github.com/RusticPotatoes/news/pkg/util
 RUN CGO_ENABLED=0 go build -o news 
 
 FROM alpine:latest AS final
