@@ -46,4 +46,4 @@ vendor/
 # macOS
 .DS_Store
 
-data/*
+*.db
