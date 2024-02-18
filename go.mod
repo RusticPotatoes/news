@@ -3,7 +3,7 @@ module github.com/RusticPotatoes/news
 go 1.20
 
 require (
-	cloud.google.com/go v0.74.0
+	cloud.google.com/go v0.74.0 // indirect
 	cloud.google.com/go/bigquery v1.13.0
 	cloud.google.com/go/pubsub v1.8.3
 	github.com/PuerkitoBio/goquery v1.6.0
@@ -26,10 +26,10 @@ require (
 	github.com/pacedotdev/firesearch-sdk/clients/go/firesearch v0.0.0-20201130164538-902295cdbabd
 	github.com/pkg/errors v0.9.1
 	github.com/thatguystone/swan v0.0.0-20190904205542-d1079a5d0c05
-	golang.org/x/net v0.0.0-20201209123823-ac852fbbde11
-	golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
-	golang.org/x/text v0.3.4
-	google.golang.org/genproto v0.0.0-20201210142538-e3217bee35cc
+	golang.org/x/net v0.6.0
+	golang.org/x/sync v0.6.0
+	golang.org/x/text v0.14.0
+	google.golang.org/genproto v0.0.0-20201210142538-e3217bee35cc // indirect
 )
 
 require github.com/mattn/go-sqlite3 v1.14.22
@@ -61,11 +61,10 @@ require (
 	github.com/tdewolff/parse/v2 v2.5.6 // indirect
 	go.opencensus.io v0.22.5 // indirect
 	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
-	golang.org/x/mod v0.4.0 // indirect
+	golang.org/x/mod v0.8.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5 // indirect
-	golang.org/x/sys v0.14.0 // indirect
-	golang.org/x/tools v0.0.0-20201208233053-a543418bbed2 // indirect
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
+	golang.org/x/sys v0.16.0 // indirect
+	golang.org/x/tools v0.6.0 // indirect
 	google.golang.org/api v0.36.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/grpc v1.34.0 // indirect
