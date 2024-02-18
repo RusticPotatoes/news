@@ -1,0 +1,14 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "removeDatabase",
+            "type": "shell",
+            "command": "rm",
+            "args": [
+                "${workspaceFolder}/data/news.db"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}
