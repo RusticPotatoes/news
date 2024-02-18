@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS edition (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     date TEXT,
     start_time DATETIME,
@@ -12,13 +12,13 @@ CREATE TABLE IF NOT EXISTS edition (
 );
 
 CREATE TABLE IF NOT EXISTS analytics (
-    user_id TEXT,
+    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
     insertion_timestamp DATETIME,
     payload TEXT
 );
 
 CREATE TABLE IF NOT EXISTS articles (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
     description TEXT,
     compressed_content BLOB,
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS articles (
 );
 
 CREATE TABLE IF NOT EXISTS sources (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id TEXT,
     name TEXT,
     url TEXT,
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS sources (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     created DATETIME,
     password_hash BLOB,
