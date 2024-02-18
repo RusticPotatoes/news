@@ -21,12 +21,16 @@ func NewUser(ctx context.Context, name, password string) *User {
 	}
 }
 
+type contextKey string
+
+const userKey contextKey = "user"
+
 func WithUser(ctx context.Context, u *User) context.Context {
-	return context.WithValue(ctx, "user", u)
+	return context.WithValue(ctx, userKey, u)
 }
 
 func UserFromContext(ctx context.Context) *User {
-	u, ok := ctx.Value("user").(*User)
+	u, ok := ctx.Value(userKey).(*User)
 	if !ok {
 		return nil
 	}

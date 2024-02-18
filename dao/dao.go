@@ -3,6 +3,8 @@ package dao
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,21 +27,104 @@ var (
 func Init(ctx context.Context) error {
 	var err error
 	db, err = sql.Open("sqlite3", "./data/news.db")
-	return err
+	if err != nil {
+		return err
+	}
+
+	err = InitSources(ctx)
+	if err != nil {
+		return err
+	}
+
+	sources, err := GetAllSources(ctx)
+	if err != nil {
+		return err
+	}
+
+	cache := &feedCache{
+		ttl: 1 * time.Hour,  // Cache feeds for 1 hour
+	}
+
+	// Populate the cache with feeds from all sources
+	for _, source := range sources {
+		// Get a feed from the cache
+		articles, ok := cache.Get(source.FeedURL)
+		if !ok {
+			// If the feed is not in the cache, fetch it from the source and add it to the cache
+			articles, err = GetArticlesForSource(ctx, source.FeedURL)
+			if err != nil {
+				return err
+			}
+			cache.Set(source.FeedURL, articles)
+		}
+
+		// Use the articles
+		for _, article := range articles {
+			fmt.Println(article.Title)
+		}
+	}
+
+	return nil
 }
 
-// type storedEdition struct {
-// 	ID         string
-// 	Name       string
-// 	Date       string
-// 	StartTime  time.Time
-// 	EndTime    time.Time
-// 	Created    time.Time
-// 	Sources    []domain.Source
-// 	Articles   []string
-// 	Categories []string
-// 	Metadata   map[string]string
-// }
+func GetArticlesForSource(ctx context.Context, link string) ([]domain.Article, error) {
+    rows, err := db.Query("SELECT id, title, description, link, image_url, source, timestamp FROM articles WHERE link = ? ORDER BY timestamp", link)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+	articles := []domain.Article{}
+	for rows.Next() {
+		var a domain.Article
+		err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+
+		articles = append(articles, a)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return articles, nil
+}
+
+func InitSources(ctx context.Context) error {
+	sources, err := GetAllSources(ctx)
+	if err != nil {
+		return err
+	}
+
+	// If there are no sources in the database, insert the default sources
+	if len(sources) == 0 {
+		defaultSources := domain.GetSources()
+
+		for _, source := range defaultSources {
+			err := SetSource(ctx, &source)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+type Edition struct {
+	ID         string    `db:"id"`
+	Name       string    `db:"name"`
+	Date       string    `db:"date"`
+	StartTime  time.Time `db:"start_time"`
+	EndTime    time.Time `db:"end_time"`
+	Created    time.Time `db:"created"`
+	Sources    []Source  `db:"sources"`
+	Articles   []Article `db:"articles"`
+	Categories []string  `db:"categories"`
+	Metadata   map[string]string `db:"metadata"`
+}
 
 type storedEdition struct {
 	ID         string
@@ -54,12 +139,60 @@ type storedEdition struct {
 	Metadata   string
 }
 
+type Analytics struct {
+	UserID              string    `db:"user_id"`
+	InsertionTimestamp  time.Time `db:"insertion_timestamp"`
+	Payload             string    `db:"payload"`
+}
+
+type Article struct {
+	ID                string    `db:"id"`
+	Title             string    `db:"title"`
+	Description       string    `db:"description"`
+	CompressedContent []byte    `db:"compressed_content"`
+	ImageURL          string    `db:"image_url"`
+	Link              string    `db:"link"`
+	Author            string    `db:"author"`
+	Source            string    `db:"source"`
+	Timestamp         time.Time `db:"timestamp"`
+	Ts                string    `db:"ts"`
+	Layout            string    `db:"layout"`
+}
+
+type Source struct {
+	ID          string   `db:"id"`
+	OwnerID     string   `db:"owner_id"`
+	Name        string   `db:"name"`
+	URL         string   `db:"url"`
+	FeedURL     string   `db:"feed_url"`
+	Categories  []string `db:"categories"`
+	DisableFetch bool  `db:"disable_fetch"`
+}
+
+type storedSource struct {
+	ID          string
+	OwnerID     string
+	Name        string
+	URL         string
+	FeedURL     string
+	Categories  string
+	DisableFetch bool
+}
+
+type User struct {
+	ID           string    `db:"id"`
+	Name         string    `db:"name"`
+	Created      time.Time `db:"created"`
+	PasswordHash []byte    `db:"password_hash"`
+	IsAdmin      bool      `db:"is_admin"`
+}
+
 func Client() *sql.DB {
     return db
 }
 
 func GetEditionForTime(ctx context.Context, t time.Time, allowRecent bool) (*domain.Edition, error) {
-	rows, err := db.Query("SELECT * FROM editions WHERE EndTime > ? ORDER BY EndTime DESC", t)
+	rows, err := db.Query("SELECT * FROM edition WHERE EndTime > ? ORDER BY EndTime DESC", t)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +203,8 @@ func GetEditionForTime(ctx context.Context, t time.Time, allowRecent bool) (*dom
 
 	for rows.Next() {
 		var s storedEdition
-		err = rows.Scan(&s.ID, &s.Name, &s.Date, &s.StartTime, &s.EndTime, &s.Created, /* ... other fields ... */)
-		if err != nil {
+		err = rows.Scan(&s.ID, &s.Name, &s.Date, &s.StartTime, &s.EndTime, &s.Created, &s.Sources, &s.Articles, &s.Categories, &s.Metadata)
+			if err != nil {
 			return nil, err
 		}
 
@@ -124,13 +257,25 @@ func SetEdition(ctx context.Context, e *domain.Edition) error {
 		return err
 	}
 
-	_, err = tx.Exec("INSERT INTO editions (ID, Name, Date, StartTime, EndTime, Created, /* ... other fields ... */) VALUES (?, ?, ?, ?, ?, ?, /* ... other fields ... */)",
-		stored.ID, stored.Name, stored.Date, stored.StartTime, stored.EndTime, stored.Created, /* ... other fields ... */)
+	_, err = tx.Exec(`
+		INSERT INTO edition (ID, Name, Date, StartTime, EndTime, Created, Sources, Articles, Categories, Metadata) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, 
+		stored.ID, 
+		stored.Name, 
+		stored.Date, 
+		stored.StartTime, 
+		stored.EndTime, 
+		stored.Created, 
+		stored.Sources, 
+		stored.Articles, 
+		stored.Categories, 
+		stored.Metadata,
+	)
 	if err != nil {
 		tx.Rollback()
 		return err
 	}
-
 	return tx.Commit()
 }
 
@@ -160,13 +305,13 @@ func editionToStored(e *domain.Edition) (storedEdition, error) {
 		ID:         e.ID,
 		Name:       e.Name,
 		Date:       e.Date,
-		Sources:    string(sources),
 		StartTime:  e.StartTime,
 		EndTime:    e.EndTime,
 		Created:    e.Created,
+		Sources:    string(sources),
+		Articles:   string(articles),
 		Categories: string(categories),
 		Metadata:   string(metadata),
-		Articles:   string(articles),
 	}
 
 	return s, nil
@@ -179,7 +324,7 @@ func editionFromStored(ctx context.Context, s storedEdition) (*domain.Edition, e
 		return nil, err
 	}
 
-	var articles []string
+	var articles []domain.Article
 	err = json.Unmarshal([]byte(s.Articles), &articles)
 	if err != nil {
 		return nil, err
@@ -201,32 +346,20 @@ func editionFromStored(ctx context.Context, s storedEdition) (*domain.Edition, e
 		ID:         s.ID,
 		Name:       s.Name,
 		Date:       s.Date,
-		Sources:    sources,
 		StartTime:  s.StartTime,
 		EndTime:    s.EndTime,
 		Created:    s.Created,
+		Sources:    sources,
+		Articles:   articles,
 		Categories: categories,
 		Metadata:   metadata,
 	}
 
-	e.Articles = make([]domain.Article, len(articles))
-	g := errgroup.Group{}
-	for i, id := range articles {
-		i, id := i, id
-		g.Go(func() error {
-			a, err := GetArticle(ctx, id)
-			if err != nil {
-				return err
-			}
-			e.Articles[i] = *a
-			return nil
-		})
-	}
-	return &e, g.Wait()
+	return &e, nil
 }
 
 func GetEdition(ctx context.Context, id string) (*domain.Edition, error) {
-	row := db.QueryRow("SELECT * FROM editions WHERE ID = ?", id)
+	row := db.QueryRow("SELECT * FROM edition WHERE ID = ?", id)
 
 	var s storedEdition
 	var sources, articles, categories, metadata string
@@ -302,14 +435,21 @@ func SetArticle(ctx context.Context, a *domain.Article) error {
 		return err
 	}
 
-	// Convert the article to JSON
-	articleJson, err := json.Marshal(a)
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.Exec("INSERT INTO articles (ID, Data) VALUES (?, ?) ON CONFLICT(ID) DO UPDATE SET Data = ?",
-		a.ID, articleJson, articleJson)
+	_, err = tx.Exec(`
+		INSERT INTO articles (id, title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+		ON CONFLICT(id) DO UPDATE SET 
+		title = excluded.title, 
+		description = excluded.description, 
+		compressed_content = excluded.compressed_content, 
+		image_url = excluded.image_url, 
+		link = excluded.link, 
+		author = excluded.author, 
+		source = excluded.source, 
+		timestamp = excluded.timestamp, 
+		ts = excluded.ts, 
+		layout = excluded.layout
+	`, a.ID, a.Title, a.Description, a.CompressedContent, a.ImageURL, a.Link, a.Author, a.Source, a.Timestamp, a.Timestamp, a.Layout)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -330,21 +470,15 @@ func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
 	}
 	mu.RUnlock()
 
-	row := db.QueryRow("SELECT Data FROM articles WHERE ID = ?", id)
+	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout FROM articles WHERE ID = ?", id)
 
-	var articleJson string
-	err := row.Scan(&articleJson)
+	a = domain.Article{}
+	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.ImageURL, &a.Link, &a.Author, &a.Source, &a.Timestamp, &a.Timestamp, &a.Layout)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No matching article found
 			return nil, nil
 		}
-		return nil, err
-	}
-
-	a = domain.Article{}
-	err = json.Unmarshal([]byte(articleJson), &a)
-	if err != nil {
 		return nil, err
 	}
 
@@ -355,21 +489,15 @@ func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
 	return &a, nil
 }
 func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
-	row := db.QueryRow("SELECT Data FROM articles WHERE Link = ?", url)
+	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout FROM articles WHERE Link = ?", url)
 
-	var articleJson string
-	err := row.Scan(&articleJson)
+	a := domain.Article{}
+	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.ImageURL, &a.Link, &a.Author, &a.Source, &a.Timestamp, &a.Timestamp, &a.Layout)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No matching article found
 			return nil, nil
 		}
-		return nil, err
-	}
-
-	a := domain.Article{}
-	err = json.Unmarshal([]byte(articleJson), &a)
-	if err != nil {
 		return nil, err
 	}
 
@@ -380,7 +508,7 @@ func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
 	return &a, nil
 }
 func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Article, error) {
-	rows, err := db.Query("SELECT Data FROM articles WHERE Timestamp > ? AND Timestamp < ? ORDER BY Timestamp", start, end)
+	rows, err := db.Query("SELECT id, title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout FROM articles WHERE Timestamp > ? AND Timestamp < ? ORDER BY Timestamp", start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -388,14 +516,8 @@ func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Arti
 
 	out := []domain.Article{}
 	for rows.Next() {
-		var articleJson string
-		err = rows.Scan(&articleJson)
-		if err != nil {
-			return nil, err
-		}
-
 		a := domain.Article{}
-		err = json.Unmarshal([]byte(articleJson), &a)
+		err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.ImageURL, &a.Link, &a.Author, &a.Source, &a.Timestamp, &a.Timestamp, &a.Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -414,10 +536,10 @@ func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Arti
 }
 
 func GetUser(ctx context.Context, id string) (*domain.User, error) {
-	row := db.QueryRow("SELECT Data FROM users WHERE ID = ?", id)
+	row := db.QueryRow("SELECT id, name, password_hash FROM users WHERE ID = ?", id)
 
-	var userJson string
-	err := row.Scan(&userJson)
+	u := domain.User{}
+	err := row.Scan(&u.ID, &u.Name, &u.PasswordHash)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No matching user found
@@ -426,28 +548,39 @@ func GetUser(ctx context.Context, id string) (*domain.User, error) {
 		return nil, err
 	}
 
+	return &u, nil
+}
+
+func GetUserByName(ctx context.Context, name string) (*domain.User, error) {
+	row := db.QueryRow("SELECT id, name, password_hash FROM users WHERE Name = ?", name)
+
 	u := domain.User{}
-	err = json.Unmarshal([]byte(userJson), &u)
+	err := row.Scan(&u.ID, &u.Name, &u.PasswordHash)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			// No matching user found
+			return nil, nil
+		}
 		return nil, err
 	}
 
 	return &u, nil
 }
+
 func SetUser(ctx context.Context, u *domain.User) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 
-	// Convert the user to JSON
-	userJson, err := json.Marshal(u)
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.Exec("INSERT INTO users (ID, Data) VALUES (?, ?) ON CONFLICT(ID) DO UPDATE SET Data = ?",
-		u.ID, userJson, userJson)
+	_, err = tx.Exec(`
+		INSERT INTO users (id, name, password_hash, is_admin) 
+		VALUES (?, ?, ?, ?) 
+		ON CONFLICT(id) DO UPDATE SET 
+		name = excluded.name, 
+		password_hash = excluded.password_hash, 
+		is_admin = excluded.is_admin
+	`, u.ID, u.Name, u.PasswordHash, u.IsAdmin)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -456,33 +589,11 @@ func SetUser(ctx context.Context, u *domain.User) error {
 	return tx.Commit()
 }
 
-func GetUserByName(ctx context.Context, name string) (*domain.User, error) {
-	row := db.QueryRow("SELECT Data FROM users WHERE Name = ?", name)
-
-	var userJson string
-	err := row.Scan(&userJson)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			// No matching user found
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	u := domain.User{}
-	err = json.Unmarshal([]byte(userJson), &u)
-	if err != nil {
-		return nil, err
-	}
-
-	return &u, nil
-}
-
 func GetSource(ctx context.Context, id string) (*domain.Source, error) {
-	row := db.QueryRow("SELECT Data FROM sources WHERE ID = ?", id)
+	row := db.QueryRow("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch FROM sources WHERE ID = ?", id)
 
-	var sourceJson string
-	err := row.Scan(&sourceJson)
+	var s storedSource
+	err := row.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No matching source found
@@ -491,13 +602,17 @@ func GetSource(ctx context.Context, id string) (*domain.Source, error) {
 		return nil, err
 	}
 
-	s := domain.Source{}
-	err = json.Unmarshal([]byte(sourceJson), &s)
-	if err != nil {
-		return nil, err
+	source := domain.Source{
+		ID:          s.ID,
+		OwnerID:     s.OwnerID,
+		Name:        s.Name,
+		URL:         s.URL,
+		FeedURL:     s.FeedURL,
+		Categories:  strings.Split(s.Categories, ","),
+		DisableFetch: s.DisableFetch,
 	}
 
-	return &s, nil
+	return &source, nil
 }
 
 func SetSource(ctx context.Context, s *domain.Source) error {
@@ -506,14 +621,19 @@ func SetSource(ctx context.Context, s *domain.Source) error {
 		return err
 	}
 
-	// Convert the source to JSON
-	sourceJson, err := json.Marshal(s)
-	if err != nil {
-		return err
-	}
+	categories := strings.Join(s.Categories, ",")
 
-	_, err = tx.Exec("INSERT INTO sources (ID, Data) VALUES (?, ?) ON CONFLICT(ID) DO UPDATE SET Data = ?",
-		s.ID, sourceJson, sourceJson)
+	_, err = tx.Exec(`
+		INSERT INTO sources (id, owner_id, name, url, feed_url, categories, disable_fetch) 
+		VALUES (?, ?, ?, ?, ?, ?, ?) 
+		ON CONFLICT(id) DO UPDATE SET 
+		owner_id = excluded.owner_id, 
+		name = excluded.name, 
+		url = excluded.url, 
+		feed_url = excluded.feed_url, 
+		categories = excluded.categories, 
+		disable_fetch = excluded.disable_fetch
+	`, s.ID, s.OwnerID, s.Name, s.URL, s.FeedURL, categories, s.DisableFetch)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -528,7 +648,7 @@ func DeleteSource(ctx context.Context, id string) error {
 }
 
 func GetSources(ctx context.Context, ownerID string) ([]domain.Source, error) {
-	rows, err := db.Query("SELECT Data FROM sources WHERE OwnerID = ?", ownerID)
+	rows, err := db.Query("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch FROM sources WHERE owner_id = ?", ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -536,19 +656,23 @@ func GetSources(ctx context.Context, ownerID string) ([]domain.Source, error) {
 
 	sources := []domain.Source{}
 	for rows.Next() {
-		var sourceJson string
-		err = rows.Scan(&sourceJson)
+		var s storedSource
+		err = rows.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch)
 		if err != nil {
 			return nil, err
 		}
 
-		s := domain.Source{}
-		err = json.Unmarshal([]byte(sourceJson), &s)
-		if err != nil {
-			return nil, err
+		source := domain.Source{
+			ID:          s.ID,
+			OwnerID:     s.OwnerID,
+			Name:        s.Name,
+			URL:         s.URL,
+			FeedURL:     s.FeedURL,
+			Categories:  strings.Split(s.Categories, ","),
+			DisableFetch: s.DisableFetch,
 		}
 
-		sources = append(sources, s)
+		sources = append(sources, source)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -559,7 +683,7 @@ func GetSources(ctx context.Context, ownerID string) ([]domain.Source, error) {
 }
 
 func GetAllSources(ctx context.Context) ([]domain.Source, error) {
-	rows, err := db.Query("SELECT Data FROM sources")
+	rows, err := db.Query("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch FROM sources")
 	if err != nil {
 		return nil, err
 	}
@@ -567,19 +691,23 @@ func GetAllSources(ctx context.Context) ([]domain.Source, error) {
 
 	sources := []domain.Source{}
 	for rows.Next() {
-		var sourceJson string
-		err = rows.Scan(&sourceJson)
+		var s storedSource
+		err = rows.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch)
 		if err != nil {
 			return nil, err
 		}
 
-		s := domain.Source{}
-		err = json.Unmarshal([]byte(sourceJson), &s)
-		if err != nil {
-			return nil, err
+		source := domain.Source{
+			ID:          s.ID,
+			OwnerID:     s.OwnerID,
+			Name:        s.Name,
+			URL:         s.URL,
+			FeedURL:     s.FeedURL,
+			Categories:  strings.Split(s.Categories, ","),
+			DisableFetch: s.DisableFetch,
 		}
 
-		sources = append(sources, s)
+		sources = append(sources, source)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -607,22 +735,16 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 	}
 
 	out := []domain.Article{}
-	for _, s := range sources {
-		rows, err := db.Query("SELECT Data FROM articles WHERE Source.FeedURL = ? AND Timestamp > ? AND Timestamp < ? ORDER BY Timestamp", s.FeedURL, start, end)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer rows.Close()
+    for _, s := range sources {
+        rows, err := db.Query("SELECT id, title, description, link, image_url, source, timestamp FROM articles WHERE link = ? AND timestamp > ? AND timestamp < ? ORDER BY timestamp", s.URL, start, end)
+        if err != nil {
+            return nil, nil, err
+        }
+        defer rows.Close()
 
 		for rows.Next() {
-			var articleJson string
-			err = rows.Scan(&articleJson)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			a := domain.Article{}
-			err = json.Unmarshal([]byte(articleJson), &a)
+			var a domain.Article
+			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -642,29 +764,31 @@ type feedCache struct {
 }
 
 func (c *feedCache) Get(url string) ([]domain.Article, bool) {
-	rows, err := db.Query("SELECT Data FROM feed_cache WHERE URL = ?", url)
+	row := db.QueryRow("SELECT Data, Expiry FROM feed_cache WHERE URL = ?", url)
+
+	var data string
+	var expiry time.Time
+	err := row.Scan(&data, &expiry)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No matching cache found
+			return nil, false
+		}
+		return nil, false
+	}
+
+	// Check if the cache has expired
+	if time.Now().After(expiry) {
+		return nil, false
+	}
+
+	var articles []domain.Article
+	err = json.Unmarshal([]byte(data), &articles)
 	if err != nil {
 		return nil, false
 	}
-	defer rows.Close()
 
-	if !rows.Next() {
-		return nil, false
-	}
-
-	var articlesJson string
-	err = rows.Scan(&articlesJson)
-	if err != nil {
-		return nil, false
-	}
-
-	as := []domain.Article{}
-	err = json.Unmarshal([]byte(articlesJson), &as)
-	if err != nil {
-		return nil, false
-	}
-
-	return as, true
+	return articles, true
 }
 
 func (c *feedCache) Set(url string, as []domain.Article) {
