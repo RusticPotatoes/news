@@ -6,9 +6,21 @@
             "type": "shell",
             "command": "rm",
             "args": [
-                "${workspaceFolder}/data/news.db"
+                "-f",
+                "\"${workspaceFolder}/data/news.db\""
             ],
             "problemMatcher": []
+        },
+        {
+            "label": "initDatabase",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "sqlite3 \"${workspaceFolder}/data/news.db\" < \"${workspaceFolder}/sql/init.sql\""
+            ],
+            "problemMatcher": [],
+            "dependsOn": "removeDatabase"
         }
     ]
 }

@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS edition (
     sources TEXT,
     articles TEXT,
     categories TEXT,
-    metadata TEXT
+    metadata TEXT,
+    UNIQUE(name, date)
 );
 
 CREATE TABLE IF NOT EXISTS analytics (
@@ -23,7 +24,7 @@ CREATE TABLE IF NOT EXISTS articles (
     description TEXT,
     compressed_content BLOB,
     image_url TEXT,
-    link TEXT,
+    link TEXT UNIQUE,
     author TEXT,
     source TEXT,
     timestamp DATETIME,
@@ -38,12 +39,13 @@ CREATE TABLE IF NOT EXISTS sources (
     url TEXT,
     feed_url TEXT,
     categories TEXT,
-    disable_fetch BOOLEAN
+    disable_fetch BOOLEAN,
+    UNIQUE(owner_id, url)
 );
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
+    name TEXT UNIQUE,
     created DATETIME,
     password_hash BLOB,
     is_admin BOOLEAN

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -27,9 +29,10 @@ var (
 func Init(ctx context.Context) error {
 	var err error
 	db, err = sql.Open("sqlite3", "./data/news.db")
-	if err != nil {
-		return err
-	}
+    if err != nil {
+        _, file, line, _ := runtime.Caller(1)
+        return fmt.Errorf("error in %s:%d: %v", file, line, err)
+    }
 
 	err = InitSources(ctx)
 	if err != nil {
@@ -258,10 +261,19 @@ func SetEdition(ctx context.Context, e *domain.Edition) error {
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO edition (ID, Name, Date, StartTime, EndTime, Created, Sources, Articles, Categories, Metadata) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO edition (name, date, start_time, end_time, created, sources, articles, categories, metadata) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(name, date) DO UPDATE SET 
+		name = excluded.name, 
+		date = excluded.date, 
+		start_time = excluded.start_time, 
+		end_time = excluded.end_time, 
+		created = excluded.created, 
+		sources = excluded.sources, 
+		articles = excluded.articles, 
+		categories = excluded.categories, 
+		metadata = excluded.metadata
 	`, 
-		stored.ID, 
 		stored.Name, 
 		stored.Date, 
 		stored.StartTime, 
@@ -436,9 +448,9 @@ func SetArticle(ctx context.Context, a *domain.Article) error {
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO articles (id, title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
-		ON CONFLICT(id) DO UPDATE SET 
+		INSERT INTO articles (title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+		ON CONFLICT(link) DO UPDATE SET 
 		title = excluded.title, 
 		description = excluded.description, 
 		compressed_content = excluded.compressed_content, 
@@ -449,7 +461,18 @@ func SetArticle(ctx context.Context, a *domain.Article) error {
 		timestamp = excluded.timestamp, 
 		ts = excluded.ts, 
 		layout = excluded.layout
-	`, a.ID, a.Title, a.Description, a.CompressedContent, a.ImageURL, a.Link, a.Author, a.Source, a.Timestamp, a.Timestamp, a.Layout)
+	`, 
+		a.Title, 
+		a.Description, 
+		a.CompressedContent, 
+		a.ImageURL, 
+		a.Link, 
+		a.Author, 
+		a.Source, 
+		a.Timestamp, 
+		a.Timestamp, 
+		a.Layout,
+	)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -574,13 +597,17 @@ func SetUser(ctx context.Context, u *domain.User) error {
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO users (id, name, password_hash, is_admin) 
-		VALUES (?, ?, ?, ?) 
-		ON CONFLICT(id) DO UPDATE SET 
+		INSERT INTO users (name, password_hash, is_admin) 
+		VALUES (?, ?, ?) 
+		ON CONFLICT(name) DO UPDATE SET 
 		name = excluded.name, 
 		password_hash = excluded.password_hash, 
 		is_admin = excluded.is_admin
-	`, u.ID, u.Name, u.PasswordHash, u.IsAdmin)
+	`, 
+		u.Name, 
+		u.PasswordHash, 
+		u.IsAdmin,
+	)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -616,25 +643,29 @@ func GetSource(ctx context.Context, id string) (*domain.Source, error) {
 }
 
 func SetSource(ctx context.Context, s *domain.Source) error {
+	log.Printf("Processing source: %v", s)
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 
 	categories := strings.Join(s.Categories, ",")
+	log.Printf("Inserting into sources: owner_id=%s, name=%s, url=%s, feed_url=%s, categories=%s, disable_fetch=%t", 
+		s.OwnerID, s.Name, s.URL, s.FeedURL, categories, s.DisableFetch)
 
 	_, err = tx.Exec(`
-		INSERT INTO sources (id, owner_id, name, url, feed_url, categories, disable_fetch) 
-		VALUES (?, ?, ?, ?, ?, ?, ?) 
-		ON CONFLICT(id) DO UPDATE SET 
+		INSERT INTO sources (owner_id, name, url, feed_url, categories, disable_fetch) 
+		VALUES (?, ?, ?, ?, ?, ?) 
+		ON CONFLICT(owner_id, url) DO UPDATE SET 
 		owner_id = excluded.owner_id, 
 		name = excluded.name, 
 		url = excluded.url, 
 		feed_url = excluded.feed_url, 
 		categories = excluded.categories, 
 		disable_fetch = excluded.disable_fetch
-	`, s.ID, s.OwnerID, s.Name, s.URL, s.FeedURL, categories, s.DisableFetch)
+	`, s.OwnerID, s.Name, s.URL, s.FeedURL, categories, s.DisableFetch)
 	if err != nil {
+		log.Printf("Error inserting into sources: %v", err)
 		tx.Rollback()
 		return err
 	}
