@@ -18,3 +18,6 @@ up:
 
 buildup:
 	docker-compose --verbose up --build 
+
+deploy: setup
+	docker-compose --verbose build
