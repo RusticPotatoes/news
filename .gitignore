@@ -1,5 +1,5 @@
+# Node modules
 readability-server/node_modules
-news
 
 # Compiled Object files, Static and Dynamic libs (Shared Objects)
 *.o
@@ -8,7 +8,6 @@ news
 
 # Binaries for programs and plugins
 *.exe
-*.exe~
 *.dll
 *.so
 *.dylib
@@ -21,22 +20,19 @@ _test
 *.[568vq]
 [568vq].out
 
+# Go specific
 *.cgo1.go
 *.cgo2.c
 _cgo_defun.c
 _cgo_gotypes.go
 _cgo_export.*
-
 _testmain.go
-
-*.exe
-*.test
 *.prof
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
-# Dependency directories (remove the comment below to include it)
+# Dependency directories
 vendor/
 
 # IDEs
@@ -46,5 +42,14 @@ vendor/
 # macOS
 .DS_Store
 
+# Database files
 *.db
+
+# Debug binaries
 *__debug_bin*
+
+# Go build files
+/bin/
+
+# Log files
+*.log
