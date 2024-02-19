@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"github.com/monzo/slog"
 	"html/template"
 	"io/ioutil"
 	"time"
+
+	"github.com/monzo/slog"
 )
 
 type Article struct {
@@ -19,9 +20,11 @@ type Article struct {
 	ImageURL          string
 	Link              string
 	Author            string
-	Source            Source
+	SourceID          int64
+	Source			  Source
 	Timestamp         time.Time
 	TS                string
+	LayoutID		  int64
 	Layout            Layout
 
 	decompressed []byte

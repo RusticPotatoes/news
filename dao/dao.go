@@ -17,6 +17,7 @@ import (
 
 	"github.com/RusticPotatoes/news/domain"
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
 	// _ "github.com/ncruces/go-sqlite3"
 )
 
@@ -29,11 +30,34 @@ var (
 func Init(ctx context.Context) error {
 	var err error
 	db, err = sql.Open("sqlite3", "./data/news.db")
-    if err != nil {
-        _, file, line, _ := runtime.Caller(1)
-        return fmt.Errorf("error in %s:%d: %v", file, line, err)
-    }
+	if err != nil {
+		_, file, line, _ := runtime.Caller(1)
+		return fmt.Errorf("error in %s:%d: %v", file, line, err)
+	}
 
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("Error generating password hash: %v", err)
+		return err
+	}
+
+	// Insert the default user
+	query := `
+		INSERT INTO users (name, password_hash, is_admin) 
+		VALUES (?, ?, ?) 
+		ON CONFLICT(name) DO NOTHING
+	`
+	params := []interface{}{"admin", hashedPassword, true}
+
+	interpolatedQuery := interpolateParams(query, params)
+	log.Printf("Executing query: %s", interpolatedQuery)
+
+	_, err = db.Exec(query, params...)
+	if err != nil {
+		log.Printf("Error inserting user: %v", err)
+		return err
+	}
+	// log.Println("Admin user inserted successfully")
 	err = InitSources(ctx)
 	if err != nil {
 		return err
@@ -70,8 +94,37 @@ func Init(ctx context.Context) error {
 	return nil
 }
 
+func interpolateParams(query string, params []interface{}) string {
+	paramStrs := make([]interface{}, len(params))
+	for i, param := range params {
+		switch v := param.(type) {
+		case string:
+			paramStrs[i] = fmt.Sprintf("'%s'", v)
+		case []byte:
+			paramStrs[i] = fmt.Sprintf("'%x'", v)
+		default:
+			paramStrs[i] = fmt.Sprintf("%v", v)
+		}
+	}
+	return fmt.Sprintf(query, paramStrs...)
+}
+
+func Close() {
+    if db != nil {
+        db.Close()
+    }
+}
+
+func HashPassword(password string) ([]byte, error) {
+    return bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+}
+
+func CheckPassword(password string, hashedPassword []byte) error {
+    return bcrypt.CompareHashAndPassword(hashedPassword, []byte(password))
+}
+
 func GetArticlesForSource(ctx context.Context, link string) ([]domain.Article, error) {
-    rows, err := db.Query("SELECT id, title, description, link, image_url, source, timestamp FROM articles WHERE link = ? ORDER BY timestamp", link)
+    rows, err := db.Query("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", link)
     if err != nil {
         return nil, err
     }
@@ -156,7 +209,7 @@ type Article struct {
 	ImageURL          string    `db:"image_url"`
 	Link              string    `db:"link"`
 	Author            string    `db:"author"`
-	Source            string    `db:"source"`
+	SourceID          int64     `db:"source_id"`
 	Timestamp         time.Time `db:"timestamp"`
 	Ts                string    `db:"ts"`
 	Layout            string    `db:"layout"`
@@ -170,16 +223,19 @@ type Source struct {
 	FeedURL     string   `db:"feed_url"`
 	Categories  []string `db:"categories"`
 	DisableFetch bool  `db:"disable_fetch"`
+	LastFetchTime time.Time `db:"last_fetch_time"`
 }
 
 type storedSource struct {
-	ID          string
-	OwnerID     string
-	Name        string
-	URL         string
-	FeedURL     string
-	Categories  string
-	DisableFetch bool
+	ID          	string
+	OwnerID     	string
+	Name        	string
+	URL         	string
+	FeedURL     	string
+	Categories  	string
+	DisableFetch 	bool
+	LastFetchTime 	time.Time
+	LayoutID    	string
 }
 
 type User struct {
@@ -290,7 +346,6 @@ func SetEdition(ctx context.Context, e *domain.Edition) error {
 	}
 	return tx.Commit()
 }
-
 
 func editionToStored(e *domain.Edition) (storedEdition, error) {
 	sources, err := json.Marshal(e.Sources)
@@ -448,19 +503,19 @@ func SetArticle(ctx context.Context, a *domain.Article) error {
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO articles (title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout) 
+		INSERT INTO articles (title, description, compressed_content, image_url, link, author, source_id, timestamp, ts, layout_id) 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
 		ON CONFLICT(link) DO UPDATE SET 
-		title = excluded.title, 
-		description = excluded.description, 
-		compressed_content = excluded.compressed_content, 
-		image_url = excluded.image_url, 
-		link = excluded.link, 
-		author = excluded.author, 
-		source = excluded.source, 
-		timestamp = excluded.timestamp, 
-		ts = excluded.ts, 
-		layout = excluded.layout
+			title = excluded.title, 
+			description = excluded.description, 
+			compressed_content = excluded.compressed_content, 
+			image_url = excluded.image_url, 
+			link = excluded.link, 
+			author = excluded.author, 
+			source_id = excluded.source_id, 
+			timestamp = excluded.timestamp, 
+			ts = excluded.ts, 
+			layout_id = excluded.layout_id
 	`, 
 		a.Title, 
 		a.Description, 
@@ -468,10 +523,10 @@ func SetArticle(ctx context.Context, a *domain.Article) error {
 		a.ImageURL, 
 		a.Link, 
 		a.Author, 
-		a.Source, 
+		a.SourceID, 
 		a.Timestamp, 
 		a.Timestamp, 
-		a.Layout,
+		a.LayoutID, // Assuming a.LayoutID holds the layout ID
 	)
 	if err != nil {
 		tx.Rollback()
@@ -493,10 +548,10 @@ func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
 	}
 	mu.RUnlock()
 
-	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout FROM articles WHERE ID = ?", id)
+	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, source_id, timestamp, ts, layout_id FROM articles WHERE ID = ?", id)
 
 	a = domain.Article{}
-	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.ImageURL, &a.Link, &a.Author, &a.Source, &a.Timestamp, &a.Timestamp, &a.Layout)
+	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.ImageURL, &a.Link, &a.Author, &a.Source, &a.Timestamp, &a.TS, &a.Layout)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No matching article found
@@ -512,7 +567,7 @@ func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
 	return &a, nil
 }
 func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
-	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout FROM articles WHERE Link = ?", url)
+	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, source_id, timestamp, ts, layout_id FROM articles WHERE Link = ?", url)
 
 	a := domain.Article{}
 	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.ImageURL, &a.Link, &a.Author, &a.Source, &a.Timestamp, &a.Timestamp, &a.Layout)
@@ -531,7 +586,7 @@ func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
 	return &a, nil
 }
 func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Article, error) {
-	rows, err := db.Query("SELECT id, title, description, compressed_content, image_url, link, author, source, timestamp, ts, layout FROM articles WHERE Timestamp > ? AND Timestamp < ? ORDER BY Timestamp", start, end)
+	rows, err := db.Query("SELECT id, title, description, compressed_content, image_url, link, author, source_id, timestamp, ts, layout_id FROM articles WHERE Timestamp > ? AND Timestamp < ? ORDER BY Timestamp", start, end)
 	if err != nil {
 		return nil, err
 	}
@@ -617,10 +672,10 @@ func SetUser(ctx context.Context, u *domain.User) error {
 }
 
 func GetSource(ctx context.Context, id string) (*domain.Source, error) {
-	row := db.QueryRow("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch FROM sources WHERE ID = ?", id)
+	row := db.QueryRow("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch, layout_id FROM sources WHERE ID = ?", id)
 
 	var s storedSource
-	err := row.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch)
+	err := row.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch, &s.LayoutID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No matching source found
@@ -630,19 +685,26 @@ func GetSource(ctx context.Context, id string) (*domain.Source, error) {
 	}
 
 	source := domain.Source{
-		ID:          s.ID,
-		OwnerID:     s.OwnerID,
-		Name:        s.Name,
-		URL:         s.URL,
-		FeedURL:     s.FeedURL,
-		Categories:  strings.Split(s.Categories, ","),
+		ID:           s.ID,
+		OwnerID:      s.OwnerID,
+		Name:         s.Name,
+		URL:          s.URL,
+		FeedURL:      s.FeedURL,
+		Categories:   strings.Split(s.Categories, ","),
 		DisableFetch: s.DisableFetch,
+		LayoutID:     s.LayoutID,
 	}
 
 	return &source, nil
 }
 
 func SetSource(ctx context.Context, s *domain.Source) error {
+	if s.OwnerID == "" {
+        s.OwnerID = "admin" // Default to "admin" if no OwnerID is provided
+    }
+	// if s.ID == "" {
+	// 	s.ID = idgen.New("src")
+	// }
 	log.Printf("Processing source: %v", s)
 	tx, err := db.Begin()
 	if err != nil {
@@ -714,7 +776,7 @@ func GetSources(ctx context.Context, ownerID string) ([]domain.Source, error) {
 }
 
 func GetAllSources(ctx context.Context) ([]domain.Source, error) {
-	rows, err := db.Query("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch FROM sources")
+	rows, err := db.Query("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch, last_fetch_time FROM sources")
 	if err != nil {
 		return nil, err
 	}
@@ -723,19 +785,56 @@ func GetAllSources(ctx context.Context) ([]domain.Source, error) {
 	sources := []domain.Source{}
 	for rows.Next() {
 		var s storedSource
-		err = rows.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch)
+		err = rows.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch, &s.LastFetchTime)
 		if err != nil {
 			return nil, err
 		}
 
 		source := domain.Source{
-			ID:          s.ID,
-			OwnerID:     s.OwnerID,
-			Name:        s.Name,
-			URL:         s.URL,
-			FeedURL:     s.FeedURL,
-			Categories:  strings.Split(s.Categories, ","),
-			DisableFetch: s.DisableFetch,
+			ID:            s.ID,
+			OwnerID:       s.OwnerID,
+			Name:          s.Name,
+			URL:           s.URL,
+			FeedURL:       s.FeedURL,
+			Categories:    strings.Split(s.Categories, ","),
+			DisableFetch:  s.DisableFetch,
+			LastFetchTime: s.LastFetchTime,
+		}
+
+		sources = append(sources, source)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return sources, nil
+}
+func GetAllSourcesForOwner(ctx context.Context, ownerID string) ([]domain.Source, error) {
+	query := "SELECT id, owner_id, name, url, feed_url, categories, disable_fetch, last_fetch_time FROM sources WHERE owner_id = ?"
+	rows, err := db.QueryContext(ctx, query, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sources := []domain.Source{}
+	for rows.Next() {
+		var s storedSource
+		err = rows.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch, &s.LastFetchTime)
+		if err != nil {
+			return nil, err
+		}
+
+		source := domain.Source{
+			ID:            s.ID,
+			OwnerID:       s.OwnerID,
+			Name:          s.Name,
+			URL:           s.URL,
+			FeedURL:       s.FeedURL,
+			Categories:    strings.Split(s.Categories, ","),
+			DisableFetch:  s.DisableFetch,
+			LastFetchTime: s.LastFetchTime,
 		}
 
 		sources = append(sources, source)
@@ -767,11 +866,87 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 
 	out := []domain.Article{}
     for _, s := range sources {
-        rows, err := db.Query("SELECT id, title, description, link, image_url, source, timestamp FROM articles WHERE link = ? AND timestamp > ? AND timestamp < ? ORDER BY timestamp", s.URL, start, end)
-        if err != nil {
-            return nil, nil, err
-        }
+		sqlStatement := fmt.Sprintf("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE source_id = '%s' AND timestamp > '%s' AND timestamp < '%s' ORDER BY timestamp", s.ID, start.Format(time.RFC3339), end.Format(time.RFC3339))
+		log.Println(sqlStatement)
+	
+		rows, err := db.Query(sqlStatement)
+		if err != nil {
+			return nil, nil, err
+		}
         defer rows.Close()
+
+		for rows.Next() {
+			var a domain.Article
+			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.Link, &a.ImageURL, &a.SourceID, &a.Timestamp)
+			if err != nil {
+				return nil, nil, err
+			}
+			a.Source = s
+
+			out = append(out, a)
+		}
+
+		if err = rows.Err(); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return out, sources, nil
+}
+// GetLastFetchTimeForSource fetches the last fetch time for a given source from the database
+func GetLastFetchTimeForSource(ctx context.Context, sourceID int) (time.Time, error) {
+	// Prepare a query to select the last fetch time for the given source
+	query := "SELECT last_fetch_time FROM sources WHERE id = ?"
+
+	// Execute the query
+	row := db.QueryRowContext(ctx, query, sourceID)
+
+	// Parse the result
+	var lastFetchTime time.Time
+	if err := row.Scan(&lastFetchTime); err != nil {
+		return time.Time{}, err
+	}
+
+	// Return the last fetch time
+	return lastFetchTime, nil
+}
+
+// SetLastFetchTimeForSource updates the last fetch time for a given source in the database
+func SetLastFetchTimeForSource(ctx context.Context, sourceID int, lastFetchTime time.Time) error {
+	// Prepare a query to update the last fetch time for the given source
+	query := "UPDATE sources SET last_fetch_time = ? WHERE id = ?"
+
+	// Execute the query
+	_, err := db.ExecContext(ctx, query, lastFetchTime, sourceID)
+
+	// Return any error
+	return err
+}
+
+func GetAllArticlesForOwner(ctx context.Context, ownerID string) ([]domain.Article, []domain.Source, error) {
+	var (
+		sources []domain.Source
+		err     error
+	)
+	if ownerID != "" {
+		sources, err = GetSources(ctx, ownerID)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		sources, err = GetAllSources(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	out := []domain.Article{}
+	for _, s := range sources {
+		rows, err := db.Query("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", s.URL)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer rows.Close()
 
 		for rows.Next() {
 			var a domain.Article

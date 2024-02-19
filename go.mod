@@ -17,7 +17,7 @@ require (
 	github.com/fatih/set v0.2.1
 	github.com/felixge/fgprof v0.9.1
 	github.com/gigawattio/window v0.0.0-20180317192513-0f5467e35573
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.0
 	github.com/jaytaylor/html2text v0.0.0-20200412013138-3577fbdbcff7
 	github.com/mmcdole/gofeed v1.1.0
@@ -26,13 +26,17 @@ require (
 	github.com/pacedotdev/firesearch-sdk/clients/go/firesearch v0.0.0-20201130164538-902295cdbabd
 	github.com/pkg/errors v0.9.1
 	github.com/thatguystone/swan v0.0.0-20190904205542-d1079a5d0c05
-	golang.org/x/net v0.6.0
+	golang.org/x/net v0.10.0
 	golang.org/x/sync v0.6.0
 	golang.org/x/text v0.14.0
 	google.golang.org/genproto v0.0.0-20201210142538-e3217bee35cc // indirect
 )
 
-require github.com/mattn/go-sqlite3 v1.14.22
+require (
+	github.com/go-co-op/gocron v1.37.0
+	github.com/mattn/go-sqlite3 v1.14.22
+	golang.org/x/crypto v0.19.0
+)
 
 require (
 	github.com/andybalholm/cascadia v1.2.0 // indirect
@@ -53,6 +57,7 @@ require (
 	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
 	github.com/olekukonko/tablewriter v0.0.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/saintfish/chardet v0.0.0-20120816061221-3af4cd4741ca // indirect
 	github.com/ssor/bom v0.0.0-20170718123548-6386211fdfcf // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
@@ -60,10 +65,11 @@ require (
 	github.com/tdewolff/minify/v2 v2.9.10 // indirect
 	github.com/tdewolff/parse/v2 v2.5.6 // indirect
 	go.opencensus.io v0.22.5 // indirect
+	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
 	golang.org/x/mod v0.8.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5 // indirect
-	golang.org/x/sys v0.16.0 // indirect
+	golang.org/x/sys v0.17.0 // indirect
 	golang.org/x/tools v0.6.0 // indirect
 	google.golang.org/api v0.36.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect

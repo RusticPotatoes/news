@@ -27,17 +27,17 @@ func handleArticle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	u := domain.UserFromContext(ctx)
+	// u := domain.UserFromContext(ctx)
 	var sources []domain.Source
-	if u != nil {
-		sources, err = dao.GetSources(ctx, u.ID)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-	} else {
-		sources = domain.GetSources()
+	// if u != nil {
+	sources, err = dao.GetSources(ctx, "admin")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
 	}
+	// } else {
+	// 	sources = domain.GetSources()
+	// }
 	for _, src := range sources {
 		if src.FeedURL == article.Source.FeedURL {
 			article.Source = src

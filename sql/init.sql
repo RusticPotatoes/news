@@ -26,20 +26,23 @@ CREATE TABLE IF NOT EXISTS articles (
     image_url TEXT,
     link TEXT UNIQUE,
     author TEXT,
-    source TEXT,
+    source_id INTEGER,
+    layout_id INTEGER,
     timestamp DATETIME,
     ts TEXT,
-    layout TEXT
+    FOREIGN KEY(source_id) REFERENCES sources(id),
+    FOREIGN KEY(layout_id) REFERENCES layouts(id)
 );
 
 CREATE TABLE IF NOT EXISTS sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id TEXT,
+    owner_id TEXT DEFAULT 'admin',
     name TEXT,
     url TEXT,
     feed_url TEXT,
     categories TEXT,
     disable_fetch BOOLEAN,
+    last_fetch_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(owner_id, url)
 );
 
@@ -50,3 +53,21 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash BLOB,
     is_admin BOOLEAN
 );
+
+CREATE TABLE IF NOT EXISTS layouts (
+    id INTEGER PRIMARY KEY,
+    size INTEGER,
+    width INTEGER,
+    title_size INTEGER,
+    max_chars INTEGER,
+    max_elements INTEGER
+);
+
+INSERT INTO layouts (id, size, width, title_size, max_chars, max_elements) VALUES
+(1, 1, 2, 6, 200, 32),
+(2, 2, 2, 6, 500, 32),
+(3, 3, 2, 6, 2250, 32),
+(4, 4, 4, 4, 2800, 45),
+(5, 5, 4, 4, 4000, 45),
+(6, 6, 6, 2, 3300, 60),
+(0, 0, 12, 0, 0, 0);

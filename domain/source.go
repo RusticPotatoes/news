@@ -3,16 +3,19 @@ package domain
 import (
 	"net/http"
 	"net/http/cookiejar"
+	"time"
 )
 
 type Source struct {
-	ID           string
-	OwnerID      string
-	Name         string
-	URL          string
-	FeedURL      string
-	Categories   []string
-	DisableFetch bool
+    ID            string
+    OwnerID       string
+    Name          string
+    URL           string
+    FeedURL       string
+    Categories    []string
+    DisableFetch  bool
+    LastFetchTime time.Time
+	LayoutID 	  string
 }
 
 var (

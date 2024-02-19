@@ -1,43 +1,70 @@
-package main
+package articles
 
 import (
 	"context"
-	"os"
+	"strconv"
+	"time"
 
 	"github.com/RusticPotatoes/news/dao"
-	"github.com/RusticPotatoes/news/pkg/util"
+	"github.com/RusticPotatoes/news/domain"
+	"github.com/mmcdole/gofeed"
 	"github.com/monzo/slog"
 )
-func main() {
-	ctx := context.Background()
 
-	var logger slog.Logger
-	logger = util.ContextParamLogger{Logger: &util.StackDriverLogger{}}
-	logger = util.ColourLogger{Writer: os.Stdout}
-	slog.SetDefaultLogger(logger)
-
-	err := dao.Init(ctx)
+// FetchArticles fetches articles from all sources for a user
+func FetchArticles(ctx context.Context, ownerID string) {
+	sources, err := dao.GetAllSourcesForOwner(ctx, ownerID)
 	if err != nil {
-		slog.Critical(ctx, "Error setting up dao: %s", err)
+		slog.Critical(ctx, "Error getting sources: %s", err)
 		return
 	}
 
-	articles, err := dao.GetArticles(ctx) // Fix the function call
+	fp := gofeed.NewParser()
+	for _, source := range sources {
+		feed, err := fp.ParseURL(source.FeedURL)
+		if err != nil {
+			slog.Critical(ctx, "Error getting feed: %s", err)
+			continue
+		}
 
-	if err != nil {
-		slog.Critical(ctx, "Error getting articles: %s", err)
-		return
-	}
-
-	for _, a := range articles {
-		a.RawHTML()
-		contentStr := ""
-		for _, e := range a.Content {
-			if e.Type != "text" {
+		for _, item := range feed.Items {
+			sourceID, err := strconv.Atoi(source.ID)
+			if err != nil {
+				slog.Critical(ctx, "Error converting source ID to int: %s", err)
 				continue
 			}
-			contentStr = contentStr + e.Value + ""
+			var authorName string
+			if item.Author != nil {
+				authorName = item.Author.Name
+			}
+			var published time.Time
+			if item.PublishedParsed != nil {
+				published = *item.PublishedParsed
+			}
+			// Create an Article from the feed item
+			article := &domain.Article{
+				Title:       item.Title,
+				Description: item.Description,
+				Link:        item.Link,
+				Author:      authorName, // This assumes that the item's Author field is not nil
+				// Source:    	 domain.Source{Name: source.ID}, // This assumes that the source.Name is a string
+				SourceID:    int64(sourceID), // This assumes that the source.Name is a string
+				Timestamp:   published, // This assumes that the item's PublishedParsed field is not nil
+				// Fill in the other Article fields as needed
+				Content: []domain.Element{
+					{
+						Type:  "text",
+						Value: item.Description,
+					},
+				},
+			}
+
+			// Save the Article to the database
+			err = dao.SetArticle(ctx, article)
+			if err != nil {
+				slog.Critical(ctx, "Error saving article: %s", err)
+				continue
+			}
 		}
-		slog.Info(ctx, "Article: %s %s", a.Link)
 	}
 }

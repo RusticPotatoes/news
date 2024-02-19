@@ -57,6 +57,9 @@ func handleNews(w http.ResponseWriter, r *http.Request) {
 	if u != nil {
 		userID = u.ID
 	}
+	if u == nil {
+		userID = "admin"
+	}
 	articles, sources, err = dao.GetArticlesForOwner(ctx, userID, time.Now().Add(-48*time.Hour), time.Now())
 	if err != nil {
 		slog.Error(ctx, "Error getting edition: %s", err)
