@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"html/template"
 	"net/http"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -27,6 +30,34 @@ func handleArticle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+
+    err = s.Acquire(ctx, 1)
+    if err != nil {
+        slog.Error(ctx, "Failed to acquire semaphore: %s", err)
+        return
+    }
+    cmd := exec.Command("node", "./readability-server/index.js", article.Link)
+    buf := &bytes.Buffer{}
+    cmd.Stdout = buf
+    err = cmd.Run()
+    s.Release(1)
+    if err != nil {
+        slog.Error(ctx, "Error fetching article: %s - %s", err, buf.String())
+        return
+    }
+    var articleContent = struct {
+        Body     string `json:"body"`
+        BodyText string `json:"body_text"`
+    }{}
+    err = json.NewDecoder(buf).Decode(&articleContent)
+    if err != nil {
+        slog.Error(ctx, "Error fetching article: %s", err)
+        return
+    }
+
+    article.Content = []domain.Element{{Type: "text", Value: removeHTMLTag(articleContent.BodyText)}}
+    article.SetHTMLContent(articleContent.Body)
+
 	// u := domain.UserFromContext(ctx)
 	var sources []domain.Source
 	// if u != nil {

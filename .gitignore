@@ -47,3 +47,4 @@ vendor/
 .DS_Store
 
 *.db
+*__debug_bin*

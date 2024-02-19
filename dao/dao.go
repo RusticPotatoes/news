@@ -49,8 +49,8 @@ func Init(ctx context.Context) error {
 	`
 	params := []interface{}{"admin", hashedPassword, true}
 
-	interpolatedQuery := interpolateParams(query, params)
-	log.Printf("Executing query: %s", interpolatedQuery)
+	// interpolatedQuery := interpolateParams(query, params)
+	// log.Printf("Executing query: %s", interpolatedQuery)
 
 	_, err = db.Exec(query, params...)
 	if err != nil {
@@ -94,20 +94,20 @@ func Init(ctx context.Context) error {
 	return nil
 }
 
-func interpolateParams(query string, params []interface{}) string {
-	paramStrs := make([]interface{}, len(params))
-	for i, param := range params {
-		switch v := param.(type) {
-		case string:
-			paramStrs[i] = fmt.Sprintf("'%s'", v)
-		case []byte:
-			paramStrs[i] = fmt.Sprintf("'%x'", v)
-		default:
-			paramStrs[i] = fmt.Sprintf("%v", v)
-		}
-	}
-	return fmt.Sprintf(query, paramStrs...)
-}
+// func interpolateParams(query string, params []interface{}) string {
+// 	paramStrs := make([]interface{}, len(params))
+// 	for i, param := range params {
+// 		switch v := param.(type) {
+// 		case string:
+// 			paramStrs[i] = fmt.Sprintf("'%s'", v)
+// 		case []byte:
+// 			paramStrs[i] = fmt.Sprintf("'%x'", v)
+// 		default:
+// 			paramStrs[i] = fmt.Sprintf("%v", v)
+// 		}
+// 	}
+// 	return fmt.Sprintf(query, paramStrs...)
+// }
 
 func Close() {
     if db != nil {
@@ -712,8 +712,8 @@ func SetSource(ctx context.Context, s *domain.Source) error {
 	}
 
 	categories := strings.Join(s.Categories, ",")
-	log.Printf("Inserting into sources: owner_id=%s, name=%s, url=%s, feed_url=%s, categories=%s, disable_fetch=%t", 
-		s.OwnerID, s.Name, s.URL, s.FeedURL, categories, s.DisableFetch)
+	// log.Printf("Inserting into sources: owner_id=%s, name=%s, url=%s, feed_url=%s, categories=%s, disable_fetch=%t", 
+		// s.OwnerID, s.Name, s.URL, s.FeedURL, categories, s.DisableFetch)
 
 	_, err = tx.Exec(`
 		INSERT INTO sources (owner_id, name, url, feed_url, categories, disable_fetch) 
@@ -867,7 +867,7 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 	out := []domain.Article{}
     for _, s := range sources {
 		sqlStatement := fmt.Sprintf("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE source_id = '%s' AND timestamp > '%s' AND timestamp < '%s' ORDER BY timestamp", s.ID, start.Format(time.RFC3339), end.Format(time.RFC3339))
-		log.Println(sqlStatement)
+		// log.Println(sqlStatement)
 	
 		rows, err := db.Query(sqlStatement)
 		if err != nil {
@@ -923,48 +923,48 @@ func SetLastFetchTimeForSource(ctx context.Context, sourceID int, lastFetchTime 
 	return err
 }
 
-func GetAllArticlesForOwner(ctx context.Context, ownerID string) ([]domain.Article, []domain.Source, error) {
-	var (
-		sources []domain.Source
-		err     error
-	)
-	if ownerID != "" {
-		sources, err = GetSources(ctx, ownerID)
-		if err != nil {
-			return nil, nil, err
-		}
-	} else {
-		sources, err = GetAllSources(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
+// func GetAllArticlesForOwner(ctx context.Context, ownerID string) ([]domain.Article, []domain.Source, error) {
+// 	var (
+// 		sources []domain.Source
+// 		err     error
+// 	)
+// 	if ownerID != "" {
+// 		sources, err = GetSources(ctx, ownerID)
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 	} else {
+// 		sources, err = GetAllSources(ctx)
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 	}
 
-	out := []domain.Article{}
-	for _, s := range sources {
-		rows, err := db.Query("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", s.URL)
-		if err != nil {
-			return nil, nil, err
-		}
-		defer rows.Close()
+// 	out := []domain.Article{}
+// 	for _, s := range sources {
+// 		rows, err := db.Query("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", s.URL)
+// 		if err != nil {
+// 			return nil, nil, err
+// 		}
+// 		defer rows.Close()
 
-		for rows.Next() {
-			var a domain.Article
-			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
-			if err != nil {
-				return nil, nil, err
-			}
+// 		for rows.Next() {
+// 			var a domain.Article
+// 			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
+// 			if err != nil {
+// 				return nil, nil, err
+// 			}
 
-			out = append(out, a)
-		}
+// 			out = append(out, a)
+// 		}
 
-		if err = rows.Err(); err != nil {
-			return nil, nil, err
-		}
-	}
+// 		if err = rows.Err(); err != nil {
+// 			return nil, nil, err
+// 		}
+// 	}
 
-	return out, sources, nil
-}
+// 	return out, sources, nil
+// }
 type feedCache struct {
 	ttl time.Duration
 }

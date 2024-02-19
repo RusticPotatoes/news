@@ -19,11 +19,11 @@ FROM node:20-buster-slim AS final
 # get package dependencies
 RUN apt-get update && apt-get install -y sqlite3 && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /src/news/readability-server /app/readability-server
+# COPY --from=build /src/news/readability-server /app/readability-server
 
-WORKDIR /app/readability-server
+# WORKDIR /app/readability-server
 
-RUN npm install
+# RUN npm install
 
 WORKDIR /app
 
@@ -42,4 +42,6 @@ RUN ldd /app/news || true
 RUN sqlite3 /app/data/news.db < /app/sql/init.sql
 
 EXPOSE 8080
-CMD ["/app/news"]
+
+# Start processes
+CMD ["/usr/bin/supervisord"]
