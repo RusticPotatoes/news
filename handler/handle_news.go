@@ -55,7 +55,7 @@ func handleNews(w http.ResponseWriter, r *http.Request) {
 	)
 	var userID string
 	if u != nil {
-		userID = u.ID
+		userID = u.Name
 	}
 	if u == nil {
 		userID = "admin"
@@ -135,7 +135,7 @@ top:
 	if cat != "" {
 		sources := domain.GetSources()
 		if u != nil {
-			sources, err = dao.GetSources(ctx, u.ID)
+			sources, err = dao.GetSources(ctx, u.Name)
 			if err != nil {
 				http.Error(w, "Error getting sources", 500)
 				return
