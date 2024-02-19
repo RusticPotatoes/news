@@ -525,7 +525,7 @@ func SetArticle(ctx context.Context, a *domain.Article) error {
 		a.Author, 
 		a.SourceID, 
 		a.Timestamp, 
-		a.Timestamp, 
+		a.TS, 
 		a.LayoutID, // Assuming a.LayoutID holds the layout ID
 	)
 	if err != nil {

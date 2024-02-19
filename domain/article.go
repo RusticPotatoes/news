@@ -72,11 +72,12 @@ func (a *Article) RawHTML() template.HTML {
 	return template.HTML(buf)
 }
 
-func (a *Article) SetHTMLContent(body string) {
-	buf := new(bytes.Buffer)
-	w := gzip.NewWriter(buf)
-	w.Write([]byte(body))
-	w.Flush()
-	w.Close()
-	a.CompressedContent = buf.Bytes()
+func (article *Article) SetHTMLContent(body string) []byte {
+    buf := new(bytes.Buffer)
+    w := gzip.NewWriter(buf)
+    w.Write([]byte(body))
+    w.Flush()
+    w.Close()
+    article.CompressedContent = buf.Bytes()
+    return article.CompressedContent
 }

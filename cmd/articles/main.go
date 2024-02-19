@@ -1,6 +1,8 @@
 package articles
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"log"
 	"regexp"
@@ -10,17 +12,17 @@ import (
 	"time"
 
 	"github.com/go-shiori/go-readability"
+	"github.com/thatguystone/swan"
 
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/domain"
 	"github.com/mmcdole/gofeed"
 	"github.com/monzo/slog"
-	"golang.org/x/sync/semaphore"
 )
 
-var (
-	s = semaphore.NewWeighted(20)
-)
+// var (
+// 	s = semaphore.NewWeighted(20)
+// )
 
 // FetchArticles fetches articles from all sources for a user
 func FetchArticles(ctx context.Context, ownerID string) {
@@ -57,10 +59,21 @@ func FetchArticles(ctx context.Context, ownerID string) {
 			if err != nil {
 				log.Fatalf("failed to parse %s, %v\n", item.Link, err)
 			}
+			
+			var body_text = struct {
+				Body     string `json:"body"`
+				BodyText string `json:"body_text"`
+			}{}
+
+			cleaned_content := removeHTMLTag(read_article.TextContent)
+			compressedContent, err := compressContent(cleaned_content)
+			if err != nil {
+				compressedContent = []byte("")
+			}
 
 			// Create an Article from the feed item
 			article := &domain.Article{
-				Title:       item.Title,
+				Title:       removeHTMLTag(item.Title),
 				Description: removeHTMLTag(read_article.Excerpt),
 				Link:        item.Link,
 				Author:      authorName, // This assumes that the item's Author field is not nil
@@ -74,9 +87,20 @@ func FetchArticles(ctx context.Context, ownerID string) {
 						Value: removeHTMLTag(read_article.TextContent),
 					},
 				},
+				CompressedContent: compressedContent,
 				ImageURL: read_article.Image,
+				TS:       published.Format("Mon Jan 2 15:04"),
 			}
 
+			article.SetHTMLContent(body_text.Body)
+
+			sa, err := swan.FromHTML(article.Link, []byte(body_text.Body))
+			if err != nil {
+				return
+			}
+			if sa.Img != nil {
+				article.ImageURL = sa.Img.Src
+			}
 
 			// Save the Article to the database
 			err = dao.SetArticle(ctx, article)
@@ -131,4 +155,18 @@ func removeHTMLTag(in string) string {
 		}
 	}
 	return in
+}
+
+func compressContent(content string) ([]byte, error) {
+	buf := new(bytes.Buffer)
+	w := gzip.NewWriter(buf)
+	_, err := w.Write([]byte(content))
+	if err != nil {
+		return nil, err
+	}
+	err = w.Close()
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
