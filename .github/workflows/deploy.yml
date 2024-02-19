@@ -24,13 +24,12 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
       - name: Build with Makefile
-        run: make deploy
+        run: make setup
 
-      - name: Push to DockerHub
-        uses: docker/build-push-action@v2
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/newspaper:latest
+      - name: Build and Push to DockerHub using Docker Compose
+        run: |
+          docker-compose --verbose build
+          docker-compose --verbose push
+        env:
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_ACCESS_TOKEN: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
