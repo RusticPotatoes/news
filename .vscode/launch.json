@@ -6,7 +6,8 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}"
+            "program": "${workspaceFolder}",
+            "internalConsoleOptions": "neverOpen"
         },
         {
             "name": "Clean DB",
@@ -14,7 +15,8 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "preLaunchTask": "removeDatabase"
+            "preLaunchTask": "removeDatabase",
+            "internalConsoleOptions": "neverOpen"
         },
         {
             "name": "Init DB",
@@ -22,7 +24,8 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
-            "preLaunchTask": "initDatabase"
+            "preLaunchTask": "initDatabase",
+            "internalConsoleOptions": "neverOpen"
         }
     ]
 }

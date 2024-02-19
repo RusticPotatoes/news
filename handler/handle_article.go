@@ -1,11 +1,8 @@
 package handler
 
 import (
-	"bytes"
-	"encoding/json"
 	"html/template"
 	"net/http"
-	"os/exec"
 	"sort"
 	"strings"
 
@@ -15,48 +12,28 @@ import (
 )
 
 func handleArticle(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+    ctx := r.Context()
 
-	t := template.New("frame.html")
-	t, err := t.ParseFiles("tmpl/frame.html", "tmpl/meta.html", "tmpl/article.html")
-	if err != nil {
-		slog.Error(ctx, "Error parsing template: %s", err)
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	article, err := dao.GetArticle(ctx, r.URL.Query().Get("id"))
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-    err = s.Acquire(ctx, 1)
+    t := template.New("frame.html")
+    t, err := t.ParseFiles("tmpl/frame.html", "tmpl/meta.html", "tmpl/article.html")
     if err != nil {
-        slog.Error(ctx, "Failed to acquire semaphore: %s", err)
-        return
-    }
-    cmd := exec.Command("node", "./readability-server/index.js", article.Link)
-    buf := &bytes.Buffer{}
-    cmd.Stdout = buf
-    err = cmd.Run()
-    s.Release(1)
-    if err != nil {
-        slog.Error(ctx, "Error fetching article: %s - %s", err, buf.String())
-        return
-    }
-    var articleContent = struct {
-        Body     string `json:"body"`
-        BodyText string `json:"body_text"`
-    }{}
-    err = json.NewDecoder(buf).Decode(&articleContent)
-    if err != nil {
-        slog.Error(ctx, "Error fetching article: %s", err)
+        slog.Error(ctx, "Error parsing template: %s", err)
+        http.Error(w, err.Error(), 500)
         return
     }
 
-    article.Content = []domain.Element{{Type: "text", Value: removeHTMLTag(articleContent.BodyText)}}
-    article.SetHTMLContent(articleContent.Body)
+    article, err := dao.GetArticle(ctx, r.URL.Query().Get("id"))
+    if err != nil {
+        http.Error(w, err.Error(), 500)
+        return
+    }
+
+    // Uncompress the content
+    uncompressedContent := string(article.RawHTML())
+
+    // Set the uncompressed content
+    article.Content = []domain.Element{{Type: "text", Value: uncompressedContent}}
+	article.SetHTMLContent(uncompressedContent)
 
 	// u := domain.UserFromContext(ctx)
 	var sources []domain.Source

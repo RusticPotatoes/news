@@ -124,7 +124,7 @@ func CheckPassword(password string, hashedPassword []byte) error {
 }
 
 func GetArticlesForSource(ctx context.Context, link string) ([]domain.Article, error) {
-    rows, err := db.Query("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", link)
+    rows, err := db.Query("SELECT id, title, description, compressed_content, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", link)
     if err != nil {
         return nil, err
     }
@@ -133,7 +133,7 @@ func GetArticlesForSource(ctx context.Context, link string) ([]domain.Article, e
 	articles := []domain.Article{}
 	for rows.Next() {
 		var a domain.Article
-		err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
+		err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
 		if err != nil {
 			return nil, err
 		}
@@ -866,7 +866,7 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 
 	out := []domain.Article{}
     for _, s := range sources {
-		sqlStatement := fmt.Sprintf("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE source_id = '%s' AND timestamp > '%s' AND timestamp < '%s' ORDER BY timestamp", s.ID, start.Format(time.RFC3339), end.Format(time.RFC3339))
+		sqlStatement := fmt.Sprintf("SELECT id, title, description, compressed_content, link, image_url, source_id, timestamp FROM articles WHERE source_id = '%s' AND timestamp > '%s' AND timestamp < '%s' ORDER BY timestamp", s.ID, start.Format(time.RFC3339), end.Format(time.RFC3339))
 		// log.Println(sqlStatement)
 	
 		rows, err := db.Query(sqlStatement)
@@ -877,11 +877,15 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 
 		for rows.Next() {
 			var a domain.Article
-			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.Link, &a.ImageURL, &a.SourceID, &a.Timestamp)
+			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.Link, &a.ImageURL, &a.SourceID, &a.Timestamp)
 			if err != nil {
 				return nil, nil, err
 			}
 			a.Source = s
+
+			// Uncompress the content and add it to the Content field
+			uncompressedContent := string(a.RawHTML())
+			a.Content = []domain.Element{{Type: "text", Value: uncompressedContent}}
 
 			out = append(out, a)
 		}

@@ -20,10 +20,6 @@ import (
 	"github.com/monzo/slog"
 )
 
-// var (
-// 	s = semaphore.NewWeighted(20)
-// )
-
 // FetchArticles fetches articles from all sources for a user
 func FetchArticles(ctx context.Context, ownerID string) {
 	sources, err := dao.GetAllSourcesForOwner(ctx, ownerID)
@@ -57,7 +53,8 @@ func FetchArticles(ctx context.Context, ownerID string) {
 
 			read_article, err := readability.FromURL(item.Link, 30*time.Second)
 			if err != nil {
-				log.Fatalf("failed to parse %s, %v\n", item.Link, err)
+				log.Printf("failed to parse %s, %v\n", item.Link, err)
+				continue
 			}
 			
 			var body_text = struct {
@@ -77,7 +74,7 @@ func FetchArticles(ctx context.Context, ownerID string) {
 				Description: removeHTMLTag(read_article.Excerpt),
 				Link:        item.Link,
 				Author:      authorName, // This assumes that the item's Author field is not nil
-				// Source:    	 domain.Source{Name: source.ID}, // This assumes that the source.Name is a string
+				Source:    	 source, // This assumes that the source.Name is a string
 				SourceID:    int64(sourceID), // This assumes that the source.Name is a string
 				Timestamp:   published, // This assumes that the item's PublishedParsed field is not nil
 				// Fill in the other Article fields as needed
@@ -92,7 +89,7 @@ func FetchArticles(ctx context.Context, ownerID string) {
 				TS:       published.Format("Mon Jan 2 15:04"),
 			}
 
-			article.SetHTMLContent(body_text.Body)
+			// article.SetHTMLContent(body_text.Body)
 
 			sa, err := swan.FromHTML(article.Link, []byte(body_text.Body))
 			if err != nil {
@@ -111,34 +108,6 @@ func FetchArticles(ctx context.Context, ownerID string) {
 		}
 	}
 }
-
-// func findFirstImage(n *html.Node, base ...*url.URL) string {
-//     if n.Type == html.ElementNode && n.Data == "img" {
-//         for _, a := range n.Attr {
-//             if a.Key == "src" {
-//                 ext := strings.ToLower(path.Ext(a.Val))
-//                 if ext == ".svg" {
-//                     continue
-//                 }
-//                 if len(base) > 0 && base[0] != nil {
-//                     imgURL, err := url.Parse(a.Val)
-//                     if err != nil {
-//                         continue
-//                     }
-//                     absURL := base[0].ResolveReference(imgURL)
-//                     return absURL.String()
-//                 }
-//                 return a.Val
-//             }
-//         }
-//     }
-//     for c := n.FirstChild; c != nil; c = c.NextSibling {
-//         if img := findFirstImage(c, base...); img != "" {
-//             return img
-//         }
-//     }
-//     return ""
-// }
 
 func removeHTMLTag(in string) string {
 	// regex to match html tag
