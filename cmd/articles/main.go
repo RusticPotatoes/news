@@ -36,7 +36,19 @@ func FetchArticles(ctx context.Context, ownerID string) {
 			continue
 		}
 
+		// Get the articles that were published by the source in the last 24 hours
+		old_articles, err := dao.GetArticlesBySourceAndTime(ctx, source.ID, time.Now().Add(-24*time.Hour), time.Now())
+		if err != nil {
+			log.Printf("Error getting articles: %s", err)
+			return
+		}
 		for _, item := range feed.Items {
+			// Check if the article has already been fetched
+			existingArticle := findArticleByLink(old_articles, item.Link)
+			if existingArticle != nil {
+				// If the article already exists, skip it
+				continue
+			}
 			sourceID, err := strconv.Atoi(source.ID)
 			if err != nil {
 				slog.Critical(ctx, "Error converting source ID to int: %s", err)
@@ -51,10 +63,19 @@ func FetchArticles(ctx context.Context, ownerID string) {
 				published = *item.PublishedParsed
 			}
 
-			read_article, err := readability.FromURL(item.Link, 30*time.Second)
-			if err != nil {
-				log.Printf("failed to parse %s, %v\n", item.Link, err)
+			// Skip the item if it was not published in the last 24 hours
+			if time.Since(published) > 24*time.Hour {
 				continue
+			}
+
+			read_article, err := readability.FromURL(item.Link, 15*time.Second)
+			if err != nil {
+				if !strings.Contains(err.Error(), "failed to parse date") {
+					log.Printf("failed to parse %s, %v\n", item.Link, err)
+					continue
+				}
+				// If it's a date parsing error, ignore it and continue
+				log.Printf("failed to parse date in %s, ignoring: %v\n", item.Link, err)
 			}
 			
 			var body_text = struct {
@@ -107,6 +128,15 @@ func FetchArticles(ctx context.Context, ownerID string) {
 			}
 		}
 	}
+}
+
+func findArticleByLink(articles []domain.Article, link string) *domain.Article {
+    for _, article := range articles {
+        if article.Link == link {
+            return &article
+        }
+    }
+    return nil
 }
 
 func removeHTMLTag(in string) string {

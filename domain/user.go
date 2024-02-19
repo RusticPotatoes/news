@@ -1,23 +1,28 @@
 package domain
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
+	"log"
 	"os"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
-
-	"github.com/RusticPotatoes/news/idgen"
+	"golang.org/x/crypto/bcrypt"
 )
 
-func NewUser(ctx context.Context, name, password string) *User {
+func NewUser(ctx context.Context, name, password string, isAdmin bool) *User {
+	hashedPassword, err := hashPassword(password)
+	if err != nil {
+		// handle error
+		log.Fatalf("Failed to hash password: %v", err)
+	}
+
 	return &User{
-		ID:           idgen.New("usr"),
+		// ID:           idgen.New("usr"),
 		Name:         name,
-		PasswordHash: hashPassword(password),
+		PasswordHash: hashedPassword,
 		Created:      time.Now(),
+		IsAdmin:      isAdmin,
 	}
 }
 
@@ -46,11 +51,11 @@ type User struct {
 }
 
 func (u *User) ValidatePassword(password string) bool {
-	if u == nil {
-		return false
-	}
-	hash := hashPassword(password)
-	return bytes.Equal(hash, u.PasswordHash)
+    if u == nil {
+        return false
+    }
+    err := bcrypt.CompareHashAndPassword(u.PasswordHash, []byte(password))
+    return err == nil
 }
 
 func (u *User) Session() (string, error) {
@@ -61,10 +66,10 @@ func (u *User) Session() (string, error) {
 	return token.SignedString([]byte(os.Getenv("TOKEN_SECRET")))
 }
 
-func hashPassword(pw string) []byte {
-	h := sha256.New()
-	h.Write([]byte(os.Getenv("PW_SALT")))
-	h.Write([]byte(pw))
-	hashed := h.Sum(nil)
-	return hashed
+func hashPassword(pw string) ([]byte, error) {
+    hashed, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+    if err != nil {
+        return nil, err
+    }
+    return hashed, nil
 }

@@ -6,7 +6,6 @@ import (
 
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/domain"
-	"github.com/RusticPotatoes/news/idgen"
 	"github.com/monzo/slog"
 )
 
@@ -25,7 +24,7 @@ func handleAddSource(w http.ResponseWriter, r *http.Request) {
 	categories := r.Form.Get("categories")
 
 	src := domain.Source{
-		ID:         idgen.New("src"),
+		// ID:         idgen.New("src"),
 		OwnerID:    u.ID,
 		Name:       name,
 		URL:        homepage,

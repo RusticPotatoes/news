@@ -24,7 +24,7 @@ import (
 var (
 	db           *sql.DB
 	mu           sync.RWMutex
-	articleCache = make(map[string]domain.Article)
+	ArticleCache *feedCache
 )
 
 func Init(ctx context.Context) error {
@@ -35,64 +35,82 @@ func Init(ctx context.Context) error {
 		return fmt.Errorf("error in %s:%d: %v", file, line, err)
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
+	admin, err := GetUserByName(ctx, "admin")
 	if err != nil {
-		log.Printf("Error generating password hash: %v", err)
+		log.Printf("Error getting admin user: %s", err)
 		return err
 	}
 
-	// Insert the default user
-	query := `
-		INSERT INTO users (name, password_hash, is_admin) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT(name) DO NOTHING
-	`
-	params := []interface{}{"admin", hashedPassword, true}
+	if admin == nil {
+		initNewUsers(ctx, "admin", "admin", true)
+		// initGuestSources(ctx)
+	}
 
-	// interpolatedQuery := interpolateParams(query, params)
-	// log.Printf("Executing query: %s", interpolatedQuery)
+	ArticleCache = &feedCache{
+		mu:    sync.RWMutex{},
+		items: make(map[string]domain.Article),
+		ttl:   1 * time.Hour,
+	}
 
-	_, err = db.Exec(query, params...)
+	return nil
+}
+func initNewUsers(ctx context.Context, username, password string, isAdmin bool) error {
+	// Prevent the creation of a guest user
+	if username == "guest" {
+		log.Printf("Error: guest user cannot be created")
+		return errors.New("guest user is not allowed")
+	}
+
+	// Create a new user
+	user := domain.NewUser(ctx, username, password, isAdmin)
+
+	// Check if the user already exists
+	u, err := GetUserByName(ctx, user.Name)
 	if err != nil {
-		log.Printf("Error inserting user: %v", err)
+		log.Printf("Err: %s", err)
+	}
+	if u != nil {
+		log.Printf("User already exists: %s", user.Name)
+		return nil
+	}
+
+	// Set the user
+	err = SetUser(ctx, user)
+	if err != nil {
+		log.Printf("Error creating user: %s", err)
 		return err
 	}
-	// log.Println("Admin user inserted successfully")
-	err = InitSources(ctx)
-	if err != nil {
-		return err
-	}
 
-	sources, err := GetAllSources(ctx)
-	if err != nil {
-		return err
-	}
-
-	cache := &feedCache{
-		ttl: 1 * time.Hour,  // Cache feeds for 1 hour
-	}
-
-	// Populate the cache with feeds from all sources
-	for _, source := range sources {
-		// Get a feed from the cache
-		articles, ok := cache.Get(source.FeedURL)
-		if !ok {
-			// If the feed is not in the cache, fetch it from the source and add it to the cache
-			articles, err = GetArticlesForSource(ctx, source.FeedURL)
-			if err != nil {
-				return err
-			}
-			cache.Set(source.FeedURL, articles)
-		}
-
-		// Use the articles
-		for _, article := range articles {
-			fmt.Println(article.Title)
+	for _, src := range domain.GetSources() {
+		src := src
+		src.OwnerID = user.Name
+		err := SetSource(ctx, &src)
+		if err != nil {
+			log.Printf("Error creating user: %s", err)
+			return err
 		}
 	}
 
 	return nil
 }
+
+// func initGuestSources(ctx context.Context) error {
+// 	defaultSources := domain.GetSources()
+// 	// adminUser, err := GetUserByName(ctx, "admin")	
+// 	// if err != nil {
+// 	// 	log.Printf("Err: %s", err)
+// 	// }
+// 	for _, src := range defaultSources {
+// 		src := src
+// 		src.OwnerID = "admin"
+// 		err := SetSource(ctx, &src)
+// 		if err != nil {
+// 			log.Printf("Error setting source: %s", err)
+// 			return err
+// 		}
+// 	}
+// 	return nil
+// }
 
 // func interpolateParams(query string, params []interface{}) string {
 // 	paramStrs := make([]interface{}, len(params))
@@ -109,65 +127,6 @@ func Init(ctx context.Context) error {
 // 	return fmt.Sprintf(query, paramStrs...)
 // }
 
-func Close() {
-    if db != nil {
-        db.Close()
-    }
-}
-
-func HashPassword(password string) ([]byte, error) {
-    return bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-}
-
-func CheckPassword(password string, hashedPassword []byte) error {
-    return bcrypt.CompareHashAndPassword(hashedPassword, []byte(password))
-}
-
-func GetArticlesForSource(ctx context.Context, link string) ([]domain.Article, error) {
-    rows, err := db.Query("SELECT id, title, description, compressed_content, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", link)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
-
-	articles := []domain.Article{}
-	for rows.Next() {
-		var a domain.Article
-		err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
-		if err != nil {
-			return nil, err
-		}
-
-		articles = append(articles, a)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return articles, nil
-}
-
-func InitSources(ctx context.Context) error {
-	sources, err := GetAllSources(ctx)
-	if err != nil {
-		return err
-	}
-
-	// If there are no sources in the database, insert the default sources
-	if len(sources) == 0 {
-		defaultSources := domain.GetSources()
-
-		for _, source := range defaultSources {
-			err := SetSource(ctx, &source)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
 
 type Edition struct {
 	ID         string    `db:"id"`
@@ -246,8 +205,78 @@ type User struct {
 	IsAdmin      bool      `db:"is_admin"`
 }
 
+type feedCache struct {
+    mu    sync.RWMutex
+    items map[string]domain.Article
+    ttl   time.Duration
+}
+
+type Item struct {
+	Value domain.Article
+}
+
+func Close() {
+    if db != nil {
+        db.Close()
+    }
+}
+
 func Client() *sql.DB {
     return db
+}
+
+func HashPassword(password string) ([]byte, error) {
+    return bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+}
+
+func CheckPassword(password string, hashedPassword []byte) error {
+    return bcrypt.CompareHashAndPassword(hashedPassword, []byte(password))
+}
+
+func GetArticlesForSource(ctx context.Context, link string) ([]domain.Article, error) {
+    rows, err := db.Query("SELECT id, title, description, compressed_content, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", link)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+	articles := []domain.Article{}
+	for rows.Next() {
+		var a domain.Article
+		err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+
+		articles = append(articles, a)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return articles, nil
+}
+
+func InitSources(ctx context.Context) error {
+	sources, err := GetAllSources(ctx)
+	if err != nil {
+		return err
+	}
+
+	// If there are no sources in the database, insert the default sources
+	if len(sources) == 0 {
+		defaultSources := domain.GetSources()
+
+		for _, source := range defaultSources {
+			err := SetSource(ctx, &source)
+			if err != nil {
+				return err
+			}
+		}
+		log.Printf("Default sources inserted successfully")
+	}
+	return nil
 }
 
 func GetEditionForTime(ctx context.Context, t time.Time, allowRecent bool) (*domain.Edition, error) {
@@ -534,24 +563,24 @@ func SetArticle(ctx context.Context, a *domain.Article) error {
 	}
 
 	mu.Lock()
-	delete(articleCache, a.ID)
+	delete(ArticleCache.items, a.ID)
 	mu.Unlock()
-
 	return tx.Commit()
 }
+
 func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
 	mu.RLock()
-	a, ok := articleCache[id]
+	a, ok := ArticleCache.items[id]
 	if ok {
 		mu.RUnlock()
 		return &a, nil
 	}
 	mu.RUnlock()
 
-	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, source_id, timestamp, ts, layout_id FROM articles WHERE ID = ?", id)
+	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, timestamp, ts FROM articles WHERE ID = ?", id)
 
 	a = domain.Article{}
-	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.ImageURL, &a.Link, &a.Author, &a.Source, &a.Timestamp, &a.TS, &a.Layout)
+	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.ImageURL, &a.Link, &a.Author, &a.Timestamp, &a.TS)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No matching article found
@@ -561,11 +590,12 @@ func GetArticle(ctx context.Context, id string) (*domain.Article, error) {
 	}
 
 	mu.Lock()
-	articleCache[a.ID] = a
+	ArticleCache.items[a.ID] = a
 	mu.Unlock()
 
 	return &a, nil
 }
+
 func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
 	row := db.QueryRow("SELECT id, title, description, compressed_content, image_url, link, author, source_id, timestamp, ts, layout_id FROM articles WHERE Link = ?", url)
 
@@ -580,11 +610,12 @@ func GetArticleByURL(ctx context.Context, url string) (*domain.Article, error) {
 	}
 
 	mu.Lock()
-	articleCache[a.ID] = a
+	ArticleCache.items[a.ID] = a
 	mu.Unlock()
 
 	return &a, nil
 }
+
 func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Article, error) {
 	rows, err := db.Query("SELECT id, title, description, compressed_content, image_url, link, author, source_id, timestamp, ts, layout_id FROM articles WHERE Timestamp > ? AND Timestamp < ? ORDER BY Timestamp", start, end)
 	if err != nil {
@@ -601,7 +632,7 @@ func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Arti
 		}
 
 		mu.Lock()
-		articleCache[a.ID] = a
+		ArticleCache.items[a.ID] = a
 		mu.Unlock()
 		out = append(out, a)
 	}
@@ -611,6 +642,66 @@ func GetArticlesByTime(ctx context.Context, start, end time.Time) ([]domain.Arti
 	}
 
 	return out, nil
+}
+func GetArticlesBySourceAndTime(ctx context.Context, sourceID string, start, end time.Time) ([]domain.Article, error) {
+	rows, err := db.Query("SELECT id, title, link, timestamp, ts FROM articles WHERE source_id = ? AND timestamp > ? AND timestamp < ? ORDER BY timestamp", sourceID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []domain.Article{}
+	for rows.Next() {
+		a := domain.Article{}
+		err = rows.Scan(&a.ID, &a.Title, &a.Link, &a.Timestamp, &a.TS)
+		if err != nil {
+			return nil, err
+		}
+
+		mu.Lock()
+		ArticleCache.items[a.ID] = a
+		mu.Unlock()
+		out = append(out, a)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func SearchInSQLite(ctx context.Context, query string) ([]domain.Article, error) {    
+	// Prepare the SQL statement
+    stmt, err := db.Prepare("SELECT title, content FROM articles WHERE title LIKE ? OR content LIKE ? LIMIT 200")
+    if err != nil {
+        return nil, err
+    }
+    defer stmt.Close()
+
+    // Execute the statement with the query as parameter
+    rows, err := stmt.Query("%" + query + "%", "%" + query + "%")
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    // Parse the results
+	var articles []domain.Article
+	for rows.Next() {
+		var article domain.Article
+		if err := rows.Scan(&article.Title, &article.Content); err != nil {
+			return nil, err
+		}
+		articles = append(articles, article)
+	}
+
+	// Check for errors from iterating over rows.
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return articles, nil
 }
 
 func GetUser(ctx context.Context, id string) (*domain.User, error) {
@@ -699,13 +790,13 @@ func GetSource(ctx context.Context, id string) (*domain.Source, error) {
 }
 
 func SetSource(ctx context.Context, s *domain.Source) error {
-	if s.OwnerID == "" {
-        s.OwnerID = "admin" // Default to "admin" if no OwnerID is provided
-    }
+	// if s.OwnerID == "" {
+    //     s.OwnerID = "guest" // Default to "admin" if no OwnerID is provided
+    // }
 	// if s.ID == "" {
 	// 	s.ID = idgen.New("src")
 	// }
-	log.Printf("Processing source: %v", s)
+	// log.Printf("Processing source: %v", s)
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -741,12 +832,20 @@ func DeleteSource(ctx context.Context, id string) error {
 }
 
 func GetSources(ctx context.Context, ownerID string) ([]domain.Source, error) {
-	rows, err := db.Query("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch FROM sources WHERE owner_id = ?", ownerID)
+	sqlQuery := fmt.Sprintf("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch FROM sources WHERE owner_id = '%s'", ownerID)
+	fmt.Println(sqlQuery)
+
+	rows, err := db.Query(sqlQuery)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
+	if rows == nil {
+		fmt.Println("rows is nil")
+		return nil, errors.New("rows is nil")
+	}
+	
+	fmt.Println(rows)
 	sources := []domain.Source{}
 	for rows.Next() {
 		var s storedSource
@@ -810,6 +909,7 @@ func GetAllSources(ctx context.Context) ([]domain.Source, error) {
 
 	return sources, nil
 }
+
 func GetAllSourcesForOwner(ctx context.Context, ownerID string) ([]domain.Source, error) {
 	query := "SELECT id, owner_id, name, url, feed_url, categories, disable_fetch, last_fetch_time FROM sources WHERE owner_id = ?"
 	rows, err := db.QueryContext(ctx, query, ownerID)
@@ -875,6 +975,8 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 		}
         defer rows.Close()
 
+		var articles []domain.Article
+		var lastID string
 		for rows.Next() {
 			var a domain.Article
 			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.Link, &a.ImageURL, &a.SourceID, &a.Timestamp)
@@ -887,8 +989,17 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 			uncompressedContent := string(a.RawHTML())
 			a.Content = []domain.Element{{Type: "text", Value: uncompressedContent}}
 
+			// Add the article to the articles slice
+			articles = append(articles, a)
+
+			// Store the ID of the article
+			lastID = a.ID
+
 			out = append(out, a)
 		}
+
+		// Add all articles to the cache
+		ArticleCache.Set(lastID, articles)
 
 		if err = rows.Err(); err != nil {
 			return nil, nil, err
@@ -897,6 +1008,7 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 
 	return out, sources, nil
 }
+
 // GetLastFetchTimeForSource fetches the last fetch time for a given source from the database
 func GetLastFetchTimeForSource(ctx context.Context, sourceID int) (time.Time, error) {
 	// Prepare a query to select the last fetch time for the given source
@@ -927,50 +1039,58 @@ func SetLastFetchTimeForSource(ctx context.Context, sourceID int, lastFetchTime 
 	return err
 }
 
-// func GetAllArticlesForOwner(ctx context.Context, ownerID string) ([]domain.Article, []domain.Source, error) {
-// 	var (
-// 		sources []domain.Source
-// 		err     error
-// 	)
-// 	if ownerID != "" {
-// 		sources, err = GetSources(ctx, ownerID)
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-// 	} else {
-// 		sources, err = GetAllSources(ctx)
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-// 	}
+func SearchInCache(ctx context.Context, query string) ([]domain.Article, error) {
+	rows, err := db.Query("SELECT Data FROM feed_cache")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-// 	out := []domain.Article{}
-// 	for _, s := range sources {
-// 		rows, err := db.Query("SELECT id, title, description, link, image_url, source_id, timestamp FROM articles WHERE link = ? ORDER BY timestamp", s.URL)
-// 		if err != nil {
-// 			return nil, nil, err
-// 		}
-// 		defer rows.Close()
+	var results []domain.Article
+	for rows.Next() {
+		var data []byte
+		if err := rows.Scan(&data); err != nil {
+			return nil, err
+		}
 
-// 		for rows.Next() {
-// 			var a domain.Article
-// 			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.Link, &a.ImageURL, &a.Source, &a.Timestamp)
-// 			if err != nil {
-// 				return nil, nil, err
-// 			}
+		var articles []domain.Article
+		if err := json.Unmarshal(data, &articles); err != nil {
+			return nil, err
+		}
 
-// 			out = append(out, a)
-// 		}
+		for _, article := range articles {
+			found := strings.Contains(article.Title, query)
+			if !found {
+				for _, element := range article.Content {
+					if strings.Contains(element.Value, query) {
+						found = true
+						break
+					}
+				}
+			}
+			if found {
+				results = append(results, article)
+			}
+		}
+	}
 
-// 		if err = rows.Err(); err != nil {
-// 			return nil, nil, err
-// 		}
-// 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-// 	return out, sources, nil
-// }
-type feedCache struct {
-	ttl time.Duration
+	return results, nil
+}
+
+func (c *feedCache) GetAll() ([]domain.Article, error) {
+	c.mu.RLock() // acquire read lock
+	defer c.mu.RUnlock() // release read lock when function returns
+
+	var articles []domain.Article
+	for _, item := range c.items {
+		articles = append(articles, item)
+	}
+
+	return articles, nil
 }
 
 func (c *feedCache) Get(url string) ([]domain.Article, bool) {

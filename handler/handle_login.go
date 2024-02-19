@@ -8,7 +8,6 @@ import (
 
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/domain"
-	"github.com/RusticPotatoes/news/idgen"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/monzo/slog"
 )
@@ -62,7 +61,7 @@ func loginRedirect(w http.ResponseWriter, r *http.Request) {
 			slog.Info(ctx, "User already exists: %s", username)
 			goto login
 		}
-		u = domain.NewUser(ctx, username, pw)
+		u = domain.NewUser(ctx, username, pw, false)
 		err = dao.SetUser(ctx, u)
 		if err != nil {
 			slog.Error(ctx, "Error creating user: %s", err)
@@ -71,7 +70,7 @@ func loginRedirect(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, src := range domain.GetSources() {
 			src := src
-			src.ID = idgen.New("src")
+			// src.ID = idgen.New("src")
 			src.OwnerID = u.ID
 			err := dao.SetSource(ctx, &src)
 			if err != nil {

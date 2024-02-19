@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/RusticPotatoes/news/idgen"
 )
 
 var (
@@ -79,7 +77,7 @@ func NewEdition(ctx context.Context, now time.Time) (*Edition, error) {
 	}
 
 	e := Edition{
-		ID:         idgen.New("edt"),
+		// ID:         idgen.New("edt"),
 		Sources:    sources,
 		Categories: cats,
 		Created:    time.Now(),

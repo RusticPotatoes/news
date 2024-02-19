@@ -7,7 +7,6 @@ import (
 
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/domain"
-	"github.com/RusticPotatoes/news/idgen"
 )
 
 type sourceSettingsPage struct {
@@ -54,9 +53,9 @@ func sourceSettingsData(w http.ResponseWriter, r *http.Request) (interface{}, er
 		http.Redirect(w, r, "/settings", http.StatusTemporaryRedirect)
 	}
 	if action == "edit" && confirm == "true" {
-		if id == "" {
-			id = idgen.New("src")
-		}
+		// if id == "" {
+		// 	id = idgen.New("src")
+		// }
 		categories := strings.Split(categories, ",")
 		for i := range categories {
 			categories[i] = strings.TrimSpace(categories[i])

@@ -8,17 +8,19 @@ import (
 	"github.com/bwmarrin/snowflake"
 )
 
-var node *snowflake.Node
+type Node struct {
+    node *snowflake.Node
+}
 
-func Init(ctx context.Context) error {
+func (n *Node) Init(ctx context.Context) error {
 	var err error
-	node, err = snowflake.NewNode(137)
+	n.node, err = snowflake.NewNode(137)
 	return err
 }
 
-func New(prefix string) string {
-	id := node.Generate()
-	return fmt.Sprintf("%s_%s", prefix, id.Base58())
+func (n *Node) New(prefix string) string {
+    id := n.node.Generate()
+    return fmt.Sprintf("%s_%s", prefix, id.Base58())
 }
 
 func Parse(id string) (snowflake.ID, error) {

@@ -2,11 +2,13 @@ package domain
 
 import (
 	"bytes"
-	"cloud.google.com/go/pubsub"
+	// "cloud.google.com/go/pubsub"
 	"context"
 	"encoding/json"
-	"github.com/monzo/slog"
 	"net/http"
+
+	"cloud.google.com/go/pubsub"
+	"github.com/monzo/slog"
 )
 
 // PubSubMessage is the payload of a Pub/Sub event.

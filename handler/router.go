@@ -26,6 +26,8 @@ var (
 	indexService *firesearch.IndexService
 )
 
+
+
 func Init(ctx context.Context) http.Handler {
 	m := mux.NewRouter()
 	m.Handle("/", http.HandlerFunc(handleNews))

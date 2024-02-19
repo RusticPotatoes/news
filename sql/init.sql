@@ -71,3 +71,9 @@ INSERT INTO layouts (id, size, width, title_size, max_chars, max_elements) VALUE
 (5, 5, 4, 4, 4000, 45),
 (6, 6, 6, 2, 3300, 60),
 (0, 0, 12, 0, 0, 0);
+
+CREATE TABLE IF NOT EXISTS feed_cache (
+    URL TEXT PRIMARY KEY,
+    Data BLOB,
+    Expiry DATETIME
+);

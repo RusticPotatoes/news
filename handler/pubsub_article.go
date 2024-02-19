@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/RusticPotatoes/news/dao"
-	"github.com/RusticPotatoes/news/idgen"
 	"github.com/monzo/slog"
 	"github.com/pacedotdev/firesearch-sdk/clients/go/firesearch"
 	"github.com/thatguystone/swan"
@@ -86,7 +85,7 @@ func handlePubsubArticle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a := domain.Article{
-		ID:          idgen.New("art"),
+		// ID:          idgen.New("art"),
 		Title:       removeHTMLTag(e.Article.Title),
 		Description: removeHTMLTag(e.Article.Description),
 		Content:     []domain.Element{{Type: "text", Value: removeHTMLTag(article.BodyText)}},

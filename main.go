@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/RusticPotatoes/news/cmd/articles"
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/handler"
+	"github.com/RusticPotatoes/news/idgen"
 	"github.com/RusticPotatoes/news/pkg/util"
 )
 
@@ -24,7 +26,20 @@ func main() {
 	logger = util.ColourLogger{Writer: os.Stdout}
 	slog.SetDefaultLogger(logger)
 
-	err := dao.Init(ctx)
+	// Initialize the idgen node
+	idgenNode := &idgen.Node{}
+	err := idgenNode.Init(context.Background())
+	if err != nil {
+		log.Fatalf("failed to initialize idgen node: %v", err)
+	}
+
+
+    // Initialize the database
+    err = dao.Init(context.Background())
+    if err != nil {
+        log.Fatalf("failed to initialize database: %v", err)
+    }
+
 	if err != nil {
 		slog.Critical(ctx, "Error setting up dao: %s", err)
 		return
@@ -59,6 +74,6 @@ func main() {
 	slog.Info(ctx, "ready, listening on addr: %s", addr)
 	slog.Error(ctx, "serving: %s", http.ListenAndServe(addr, handler.Init(ctx)))
 	// Keep the main function running
-	
+
 	select {}
 }

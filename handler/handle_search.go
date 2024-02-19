@@ -7,12 +7,11 @@ import (
 
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/domain"
-	"github.com/pacedotdev/firesearch-sdk/clients/go/firesearch"
 )
 
 type result struct {
-	Article *domain.Article
-	HitText string
+    Article domain.Article `json:"article"`
+    // HitText string        `json:"hitText"`
 }
 
 type searchPage struct {
@@ -22,34 +21,24 @@ type searchPage struct {
 }
 
 func handleSearch(w http.ResponseWriter, r *http.Request) (interface{}, error) {
-	ctx := r.Context()
-	query := r.URL.Query().Get("q")
+    ctx := r.Context()
+    query := r.URL.Query().Get("q")
 
-	searchResults, err := indexService.Search(ctx, firesearch.SearchRequest{
-		Query: firesearch.SearchQuery{
-			IndexPath: "news/search/articles",
-			Text:      query,
-			Limit:     200,
-			Select:    []string{"title", "content"},
-		},
-	})
+	searchResults, err := dao.SearchInCache(ctx, query)
 	if err != nil {
 		return nil, err
 	}
+	
 	p := searchPage{
 		Query: query,
 		url:   r.URL.String(),
 	}
-	for _, hit := range searchResults.Hits {
-		article, err := dao.GetArticle(ctx, hit.ID)
-		if err != nil {
-			return nil, err
-		}
+	for _, article := range searchResults {
 		p.Results = append(p.Results, result{
 			Article: article,
-			HitText: hit.Highlights[0].Text,
 		})
 	}
+
 	sort.Slice(p.Results, func(i, j int) bool {
 		return p.Results[i].Article.Timestamp.After(p.Results[j].Article.Timestamp)
 	})
@@ -63,3 +52,4 @@ func (p searchPage) Meta() Meta {
 		Image: "/static/images/preview.png",
 	}
 }
+
