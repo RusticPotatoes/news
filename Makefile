@@ -16,8 +16,15 @@ buildrun: build
 up:
 	docker-compose  --verbose up
 
+down:
+	docker-compose  --verbose down
+
 buildup:
 	docker-compose --verbose up --build 
 
 deploy: setup
 	docker-compose --verbose build
+
+clean:
+	docker container prune -f
+	docker image prune -f
