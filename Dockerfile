@@ -17,8 +17,10 @@ RUN CGO_ENABLED=1 go build -o news
 FROM node:20-buster-slim AS final
 
 # get package dependencies
-RUN apt-get update && apt-get install -y sqlite3 supervisor && rm -rf /var/lib/apt/lists/*
+# supervisor
+RUN apt-get update && apt-get install -y sqlite3 ca-certificates && update-ca-certificates && rm -rf /var/lib/apt/lists/*
 
+# Rest of your Dockerfile...
 WORKDIR /app
 
 COPY --from=build /src/news/news /app/
@@ -37,8 +39,10 @@ RUN sqlite3 /app/data/news.db < /app/sql/init.sql
 
 EXPOSE 8080
 
-# Copy the supervisord configuration file
-COPY ./supervisord.conf /app/supervisord.conf
+# # Copy the supervisord configuration file
+# COPY ./supervisord.conf /app/supervisord.conf
 
 # Start processes
-CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
+WORKDIR /app
+CMD ["/app/news"]
+# CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
