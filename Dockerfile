@@ -17,13 +17,7 @@ RUN CGO_ENABLED=1 go build -o news
 FROM node:20-buster-slim AS final
 
 # get package dependencies
-RUN apt-get update && apt-get install -y sqlite3 && rm -rf /var/lib/apt/lists/*
-
-# COPY --from=build /src/news/readability-server /app/readability-server
-
-# WORKDIR /app/readability-server
-
-# RUN npm install
+RUN apt-get update && apt-get install -y sqlite3 supervisor && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -43,5 +37,8 @@ RUN sqlite3 /app/data/news.db < /app/sql/init.sql
 
 EXPOSE 8080
 
+# Copy the supervisord configuration file
+COPY ./supervisord.conf /app/supervisord.conf
+
 # Start processes
-CMD ["/usr/bin/supervisord"]
+CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
