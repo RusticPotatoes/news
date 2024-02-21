@@ -34,13 +34,7 @@ func main() {
 
 	for _, a := range articles {
 		a.RawHTML()
-		contentStr := ""
-		for _, e := range a.Content {
-			if e.Type != "text" {
-				continue
-			}
-			contentStr = contentStr + e.Value + ""
-		}
-		slog.Info(ctx, "Article: %s %s", a.Link)
+		// contentStr := a.Content.Content
+		slog.Info(ctx, "Article: %s", a.Link)
 	}
 }

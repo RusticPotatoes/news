@@ -8,11 +8,9 @@ import (
 
 	"github.com/RusticPotatoes/news/domain"
 	"github.com/RusticPotatoes/news/pkg/util"
-	"github.com/felixge/fgprof"
 
 	"github.com/gorilla/mux"
 	"github.com/monzo/slog"
-	"github.com/pacedotdev/firesearch-sdk/clients/go/firesearch"
 )
 
 var (
@@ -22,8 +20,8 @@ var (
 	}
 
 	p            domain.Publisher
-	client       *firesearch.Client
-	indexService *firesearch.IndexService
+	// client       *firesearch.Client
+	// indexService *firesearch.IndexService
 )
 
 
@@ -44,14 +42,14 @@ func Init(ctx context.Context) http.Handler {
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 	}))
 	m.Handle("/favicon.ico", http.NotFoundHandler())
-	m.Handle("/events/source", http.HandlerFunc(handlePubsubSource))
-	m.Handle("/events/article", http.HandlerFunc(handlePubsubArticle))
+	// m.Handle("/events/source", http.HandlerFunc(handlePubsubSource))
+	// m.Handle("/events/article", http.HandlerFunc(handlePubsubArticle))
 	m.Handle("/poll", http.HandlerFunc(handlePoll))
 	m.Handle("/article/debug", http.HandlerFunc(handleDebugArticle))
 	m.Handle("/article/refresh", http.HandlerFunc(handleRefreshArticle))
 	m.Handle("/settings/source", genericHandler("tmpl/settings_source.html", sourceSettingsData))
 	m.Handle("/search", genericHandler("tmpl/search.html", handleSearch))
-	m.Handle("/debug/fgprof", fgprof.Handler())
+	// m.Handle("/debug/fgprof", fgprof.Handler())
 	// cfg := profiler.Config{
 	// 	Service:        "news",
 	// 	ServiceVersion: "1.0.0",

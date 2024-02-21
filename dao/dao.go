@@ -976,7 +976,7 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
         defer rows.Close()
 
 		var articles []domain.Article
-		var lastID string
+		// var rarticles readability.Article
 		for rows.Next() {
 			var a domain.Article
 			err = rows.Scan(&a.ID, &a.Title, &a.Description, &a.CompressedContent, &a.Link, &a.ImageURL, &a.SourceID, &a.Timestamp)
@@ -986,20 +986,20 @@ func GetArticlesForOwner(ctx context.Context, ownerID string, start, end time.Ti
 			a.Source = s
 
 			// Uncompress the content and add it to the Content field
-			uncompressedContent := string(a.RawHTML())
-			a.Content = []domain.Element{{Type: "text", Value: uncompressedContent}}
+			uncompressedContent, err:=  domain.DecompressContent(a.CompressedContent)
+			if err != nil {
+				return nil, nil, err
+			}
+			a.Content = uncompressedContent
 
 			// Add the article to the articles slice
 			articles = append(articles, a)
 
-			// Store the ID of the article
-			lastID = a.ID
-
 			out = append(out, a)
 		}
 
-		// Add all articles to the cache
-		ArticleCache.Set(lastID, articles)
+		// Add all articles to the cache, using the source ID as the key
+		ArticleCache.Set(s.ID, articles)
 
 		if err = rows.Err(); err != nil {
 			return nil, nil, err
@@ -1061,11 +1061,17 @@ func SearchInCache(ctx context.Context, query string) ([]domain.Article, error) 
 		for _, article := range articles {
 			found := strings.Contains(article.Title, query)
 			if !found {
-				for _, element := range article.Content {
-					if strings.Contains(element.Value, query) {
-						found = true
-						break
-					}
+				if strings.Contains(article.Content.Byline, query) || 
+					strings.Contains(article.Description, query) || 
+					strings.Contains(article.Content.Content, query) || 
+					strings.Contains(article.Content.TextContent, query) || 
+					strings.Contains(article.Content.Excerpt, query) || 
+					strings.Contains(article.Content.SiteName, query) || 
+					strings.Contains(article.Content.Image, query) || 
+					strings.Contains(article.Content.Favicon, query) || 
+					strings.Contains(article.Content.Language, query) {
+					found = true
+					break
 				}
 			}
 			if found {
@@ -1073,7 +1079,6 @@ func SearchInCache(ctx context.Context, query string) ([]domain.Article, error) 
 			}
 		}
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}

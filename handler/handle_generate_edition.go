@@ -43,11 +43,15 @@ func handleGenerateEdition(w http.ResponseWriter, r *http.Request) {
 	newArticles := []domain.Article{}
 L:
 	for _, a := range articles {
-		for _, e := range a.Content {
-			if !utf8.Valid([]byte(e.Value)) {
-				continue L
-			}
+		if a.Content.Title == "" || a.Content.TextContent == "" {
+			continue L
 		}
+
+		if !utf8.Valid([]byte(a.Content.Title)) || 
+			!utf8.Valid([]byte(a.Content.TextContent)) {
+			continue L
+		}
+
 		newArticles = append(newArticles, a)
 	}
 	e.Articles = newArticles

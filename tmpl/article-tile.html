@@ -21,9 +21,7 @@
                 <a href="/?src={{.Source.Name}}"><p class="is-size-7 has-text-weight-bold">{{.Source.Name}} - {{.TS}}</p></a>
             </div>
             <div id="{{.ID}}-text" class="subcol">
-                {{range .Content}}
-                    {{.Value}}
-                {{end}}
+                {{.Content.TextContent}}
             </div>
             <a href="/article?id={{.ID}}">(read more)</a>
             <script>
@@ -55,9 +53,7 @@
                 <a href="/?src={{.Source.Name}}"><p class="is-size-7 has-text-weight-bold">{{.Source.Name}} - {{.TS}}</p></a>
             </div>
             <div id="{{.ID}}-text" class="subcol">
-                {{range .Content}}
-                    {{.Value}}
-                {{end}}
+                {{.Content.TextContent}}
             </div>
             <a href="/article?id={{.ID}}">(read more)</a>
             <script>
@@ -92,9 +88,7 @@
                 <a href="/?src={{.Source.Name}}"><p class="is-size-7 has-text-weight-bold">{{.Source.Name}} - {{.TS}}</p></a>
             </div>
             <div id="{{.ID}}-text" class="subcol">
-                {{range .Content}}
-                    {{.Value}}
-                {{end}}
+                {{.Content.TextContent}}
             </div>
             <a href="/article?id={{.ID}}">(read more)</a>
         </div>
@@ -126,9 +120,7 @@
                 <a href="/?src={{.Source.Name}}"><p class="is-size-7 has-text-weight-bold">{{.Source.Name}} - {{.TS}}</p></a>
             </div>
             <div id="{{.ID}}-text" class="subcol">
-                {{range .Content}}
-                    {{.Value}}
-                {{end}}
+                {{.Content.TextContent}}
             </div>
             <a href="/article?id={{.ID}}">(read more)</a>
             <script>
@@ -165,9 +157,7 @@
                 <a href="/?src={{.Source.Name}}" ><p class="is-size-7 has-text-weight-bold">{{.Source.Name}} - {{.TS}}</p></a>
             </div>
             <div id="{{.ID}}-text" class="subcol">
-                {{range .Content}}
-                    {{.Value}}
-                {{end}}
+    {{.Content.TextContent}}
             </div>
             <a href="/article?id={{.ID}}" class="read-more">(read more)</a>
             <script>
@@ -202,9 +192,7 @@
                 <a href="/?src={{.Source.Name}}"><p class="is-size-7 has-text-weight-bold source-link">{{.Source.Name}} - {{.TS}}</p></a>
             </div>
             <div id="{{.ID}}-text" class="subcol">
-                {{range .Content}}
-                    {{.Value}}
-                {{end}}
+                {{.Content.TextContent}}
             </div>
             <a href="/article?id={{.ID}}" class="read-more">(read more)</a>
             <script>

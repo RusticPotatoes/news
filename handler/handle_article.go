@@ -14,7 +14,9 @@ import (
 func handleArticle(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
 
-    t := template.New("frame.html")
+    t := template.New("frame.html").Funcs(template.FuncMap{
+        "safeHTML": safeHTML,
+    })
     t, err := t.ParseFiles("tmpl/frame.html", "tmpl/meta.html", "tmpl/article.html")
     if err != nil {
         slog.Error(ctx, "Error parsing template: %s", err)
@@ -29,11 +31,15 @@ func handleArticle(w http.ResponseWriter, r *http.Request) {
     }
 
     // Uncompress the content
-    uncompressedContent := string(article.RawHTML())
+    // uncompressedContend, err := domain.DecompressContent(article.Content)
+	// if err != nil {
+	// 	http.Error(w, err.Error(), 500)
+	// 	return
+	// }
 
     // Set the uncompressed content
-    article.Content = []domain.Element{{Type: "text", Value: uncompressedContent}}
-	article.SetHTMLContent(uncompressedContent)
+    // article.Content = uncompressedContend
+	// article.SetHTMLContent(uncompressedContend)
 
 	// u := domain.UserFromContext(ctx)
 	var sources []domain.Source
@@ -58,12 +64,20 @@ func handleArticle(w http.ResponseWriter, r *http.Request) {
 			User: domain.UserFromContext(ctx),
 			Meta: Meta{
 				Title:       article.Title + " - " + article.Source.Name,
-				Description: preview(article.Content),
+				Description: preview([]domain.Element{{Type: "text", Value: article.Content.TextContent}}),
 				Image:       article.ImageURL,
 				URL:         r.URL.String(),
 			},
 		},
 	}
+
+	// Uncompress the content and add it to the Content field
+	uncompressedContent, err:=  domain.DecompressContent(article.CompressedContent)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	a.Article.Content = uncompressedContent
 
 	byFeedURL := make(map[string]domain.Source)
 	smap := make(map[string]struct{})
@@ -106,4 +120,8 @@ func preview(es []domain.Element) string {
 		return out
 	}
 	return out[:400]
+}
+
+func safeHTML(text string) template.HTML {
+    return template.HTML(text)
 }
