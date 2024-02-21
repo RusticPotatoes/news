@@ -763,10 +763,10 @@ func SetUser(ctx context.Context, u *domain.User) error {
 }
 
 func GetSource(ctx context.Context, id string) (*domain.Source, error) {
-	row := db.QueryRow("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch, layout_id FROM sources WHERE ID = ?", id)
+	row := db.QueryRow("SELECT id, owner_id, name, url, feed_url, categories, disable_fetch FROM sources WHERE ID = ?", id)
 
 	var s storedSource
-	err := row.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch, &s.LayoutID)
+	err := row.Scan(&s.ID, &s.OwnerID, &s.Name, &s.URL, &s.FeedURL, &s.Categories, &s.DisableFetch)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No matching source found
@@ -783,7 +783,6 @@ func GetSource(ctx context.Context, id string) (*domain.Source, error) {
 		FeedURL:      s.FeedURL,
 		Categories:   strings.Split(s.Categories, ","),
 		DisableFetch: s.DisableFetch,
-		LayoutID:     s.LayoutID,
 	}
 
 	return &source, nil

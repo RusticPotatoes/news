@@ -40,7 +40,7 @@ func sourceSettingsData(w http.ResponseWriter, r *http.Request) (interface{}, er
 		if err != nil {
 			return nil, err
 		}
-		if source.OwnerID != u.ID {
+		if source.OwnerID != u.Name {
 			return nil, fmt.Errorf("permission denied")
 		}
 		cats = strings.Join(source.Categories, ",")
