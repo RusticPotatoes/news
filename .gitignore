@@ -14,7 +14,6 @@ readability-server/node_modules
 
 # Folders
 _obj
-_test
 
 # Architecture specific extensions/prefixes
 *.[568vq]
@@ -26,7 +25,6 @@ _test
 _cgo_defun.c
 _cgo_gotypes.go
 _cgo_export.*
-_testmain.go
 *.prof
 
 # Output of the go coverage tool, specifically when used with LiteIDE

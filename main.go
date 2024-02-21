@@ -13,7 +13,6 @@ import (
 	"github.com/RusticPotatoes/news/cmd/articles"
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/handler"
-	"github.com/RusticPotatoes/news/idgen"
 	"github.com/RusticPotatoes/news/pkg/util"
 )
 
@@ -26,16 +25,9 @@ func main() {
 	logger = util.ColourLogger{Writer: os.Stdout}
 	slog.SetDefaultLogger(logger)
 
-	// Initialize the idgen node
-	idgenNode := &idgen.Node{}
-	err := idgenNode.Init(context.Background())
-	if err != nil {
-		log.Fatalf("failed to initialize idgen node: %v", err)
-	}
-
 
     // Initialize the database
-    err = dao.Init(context.Background())
+    err := dao.Init(context.Background())
     if err != nil {
         log.Fatalf("failed to initialize database: %v", err)
     }
@@ -44,25 +36,36 @@ func main() {
 		slog.Critical(ctx, "Error setting up dao: %s", err)
 		return
 	}
+	ownerID := "admin" 
 
 	// Create a new scheduler
 	s := gocron.NewScheduler(time.UTC)
 
-	ownerID := "admin" 
 
-	// Schedule fetchArticles to run every day at 9am
-	_, err = s.Every(1).Day().At("9:00").Do(func() {
-		articles.FetchArticles(ctx, ownerID)
-	})
+	_, err = s.Every(1).Day().At("2:00").Do(articles.FetchArticles, ctx, ownerID)
 	if err != nil {
 		slog.Critical(ctx, "Error scheduling task: %s", err)
 		return
 	}
 
-    articles.FetchArticles(ctx, ownerID)
+	_, err = s.Every(1).Day().At("10:00").Do(articles.FetchArticles, ctx, ownerID)
+	if err != nil {
+		slog.Critical(ctx, "Error scheduling task: %s", err)
+		return
+	}
 
-	// Start the scheduler (runs in its own goroutine)
-	s.StartAsync()
+	_, err = s.Every(1).Day().At("17:00").Do(articles.FetchArticles, ctx, ownerID)
+	if err != nil {
+		slog.Critical(ctx, "Error scheduling task: %s", err)
+		return
+	}
+
+	// Run tasks immediately
+	go articles.FetchArticles(ctx, ownerID)
+
+	go func() {
+		s.StartBlocking()
+	}()
 
 	var addr string
 	if os.Getenv("NEWS_ENV") == "debug" {

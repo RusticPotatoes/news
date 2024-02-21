@@ -10,7 +10,7 @@
 		</a>
 		<div style="margin-top: 2rem;">
 			<div class="article-content">
-				{{ .Article.RawHTML }}
+				{{ .Article.Content.Content | safeHTML }}			
 			</div>
 		</div>
 		{{if .User}}

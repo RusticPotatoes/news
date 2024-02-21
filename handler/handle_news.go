@@ -82,17 +82,16 @@ func handleNews(w http.ResponseWriter, r *http.Request) {
 	newArticles := []domain.Article{}
 L:
 	for _, a := range articles {
-		content := ""
-		for _, e := range a.Content {
-			if !utf8.Valid([]byte(e.Value)) {
-				continue L
-			}
-			if e.Type != "text" {
-				continue
-			}
-			content = content + e.Value + " "
+		if !utf8.Valid([]byte(a.Content.Content)) {
+			continue L
 		}
-		a.Content = []domain.Element{{Type: "text", Value: content}}
+
+		// a.Content is already of type readability.Article, so you can use it directly
+		// No need to call readability.FromURL again
+
+		a.Title = a.Content.Title
+		// set other fields of a from a.Content as needed
+
 		a.Source = byFeedURL[a.Source.FeedURL]
 		newArticles = append(newArticles, a)
 	}
@@ -270,16 +269,16 @@ top:
 	if !e.DisableCache {
 		lc.Set(e.ID, e.cacheIndex, a)
 	}
-	a.Content = capContent(a.Content, size)
+	a.Trim(size)
 	e.cacheIndex++
 	return &a
 }
 
-func capContent(c []domain.Element, size int) []domain.Element {
-	v := c[0].Value
-	if len(v) > size+200 {
-		v = v[:size+200]
-	}
-	c[0].Value = v
-	return c
-}
+// func capContent(c string, size int) string {
+// 	v := c
+// 	if len(v) > size+200 {
+// 		v = v[:size+200]
+// 	}
+// 	c = v
+// 	return c
+// }

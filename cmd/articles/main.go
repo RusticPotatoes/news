@@ -1,8 +1,6 @@
 package articles
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"log"
 	"regexp"
@@ -12,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-shiori/go-readability"
-	"github.com/thatguystone/swan"
 
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/RusticPotatoes/news/domain"
@@ -77,14 +74,8 @@ func FetchArticles(ctx context.Context, ownerID string) {
 				// If it's a date parsing error, ignore it and continue
 				log.Printf("failed to parse date in %s, ignoring: %v\n", item.Link, err)
 			}
-			
-			var body_text = struct {
-				Body     string `json:"body"`
-				BodyText string `json:"body_text"`
-			}{}
 
-			cleaned_content := removeHTMLTag(read_article.TextContent)
-			compressedContent, err := compressContent(cleaned_content)
+			compressedContent, err := domain.CompressContent(read_article)
 			if err != nil {
 				compressedContent = []byte("")
 			}
@@ -99,12 +90,7 @@ func FetchArticles(ctx context.Context, ownerID string) {
 				SourceID:    int64(sourceID), // This assumes that the source.Name is a string
 				Timestamp:   published, // This assumes that the item's PublishedParsed field is not nil
 				// Fill in the other Article fields as needed
-				Content: []domain.Element{
-					{
-						Type:  "text",
-						Value: removeHTMLTag(read_article.TextContent),
-					},
-				},
+				Content: read_article,
 				CompressedContent: compressedContent,
 				ImageURL: read_article.Image,
 				TS:       published.Format("Mon Jan 2 15:04"),
@@ -112,13 +98,13 @@ func FetchArticles(ctx context.Context, ownerID string) {
 
 			// article.SetHTMLContent(body_text.Body)
 
-			sa, err := swan.FromHTML(article.Link, []byte(body_text.Body))
-			if err != nil {
-				return
-			}
-			if sa.Img != nil {
-				article.ImageURL = sa.Img.Src
-			}
+			// sa, err := swan.FromHTML(article.Link, []byte(body_text.Body))
+			// if err != nil {
+			// 	return
+			// }
+			// if sa.Img != nil {
+			// 	article.ImageURL = sa.Img.Src
+			// }
 
 			// Save the Article to the database
 			err = dao.SetArticle(ctx, article)
@@ -156,16 +142,16 @@ func removeHTMLTag(in string) string {
 	return in
 }
 
-func compressContent(content string) ([]byte, error) {
-	buf := new(bytes.Buffer)
-	w := gzip.NewWriter(buf)
-	_, err := w.Write([]byte(content))
-	if err != nil {
-		return nil, err
-	}
-	err = w.Close()
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
+// func compressContent(content string) ([]byte, error) {
+// 	buf := new(bytes.Buffer)
+// 	w := gzip.NewWriter(buf)
+// 	_, err := w.Write([]byte(content))
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	err = w.Close()
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return buf.Bytes(), nil
+// }

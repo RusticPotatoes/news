@@ -10,7 +10,6 @@ import (
 
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/monzo/slog"
-	"github.com/pacedotdev/firesearch-sdk/clients/go/firesearch"
 	"github.com/thatguystone/swan"
 	"golang.org/x/sync/semaphore"
 
@@ -88,7 +87,7 @@ func handlePubsubArticle(w http.ResponseWriter, r *http.Request) {
 		// ID:          idgen.New("art"),
 		Title:       removeHTMLTag(e.Article.Title),
 		Description: removeHTMLTag(e.Article.Description),
-		Content:     []domain.Element{{Type: "text", Value: removeHTMLTag(article.BodyText)}},
+		// Content:     []domain.Element{{Type: "text", Value: removeHTMLTag(article.BodyText)}},
 		ImageURL:    e.Article.ImageURL,
 		Link:        e.Article.Link,
 		Source:      e.Article.Source,
@@ -112,24 +111,24 @@ func handlePubsubArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info(ctx, "Stored new article: %s - %s", a.ID, a.Title)
-	_, err = indexService.PutDoc(ctx, firesearch.PutDocRequest{
-		IndexPath: "news/search/articles",
-		Doc: firesearch.Doc{
-			ID: a.ID,
-			SearchFields: []firesearch.SearchField{
-				{
-					Key:   "title",
-					Value: a.Title,
-					Store: true,
-				},
-				{
-					Key:   "content",
-					Value: article.BodyText,
-					Store: true,
-				},
-			},
-		},
-	})
+	// _, err = indexService.PutDoc(ctx, firesearch.PutDocRequest{
+	// 	IndexPath: "news/search/articles",
+	// 	Doc: firesearch.Doc{
+	// 		ID: a.ID,
+	// 		SearchFields: []firesearch.SearchField{
+	// 			{
+	// 				Key:   "title",
+	// 				Value: a.Title,
+	// 				Store: true,
+	// 			},
+	// 			{
+	// 				Key:   "content",
+	// 				Value: article.BodyText,
+	// 				Store: true,
+	// 			},
+	// 		},
+	// 	},
+	// })
 	if err != nil {
 		slog.Error(ctx, "Error indexing: %s", err)
 	}

@@ -8,7 +8,6 @@ import (
 
 	"github.com/RusticPotatoes/news/dao"
 	"github.com/monzo/slog"
-	"github.com/thatguystone/swan"
 )
 
 func handleRefreshArticle(w http.ResponseWriter, r *http.Request) {
@@ -41,17 +40,17 @@ func handleRefreshArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.Content = toElements(article.BodyText, "\n")
+	// a.Content = toElements(article.BodyText, "\n")
 	a.SetHTMLContent(article.Body)
 
-	sa, err := swan.FromHTML(a.Link, []byte(article.Body))
-	if err != nil {
-		slog.Error(ctx, "Error parsing article: %s", err, slogParams)
-		return
-	}
-	if sa.Img != nil {
-		a.ImageURL = sa.Img.Src
-	}
+	// sa, err := swan.FromHTML(a.Link, []byte(article.Body))
+	// if err != nil {
+	// 	slog.Error(ctx, "Error parsing article: %s", err, slogParams)
+	// 	return
+	// }
+	// if sa.Img != nil {
+	// 	a.ImageURL = sa.Img.Src
+	// }
 	err = dao.SetArticle(ctx, a)
 	if err != nil {
 		slog.Error(ctx, "Error storing article: %s", err, slogParams)
