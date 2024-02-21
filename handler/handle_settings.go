@@ -47,7 +47,7 @@ func handleSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not logged in", 400)
 		return
 	}
-	sources, err := dao.GetSources(ctx, u.ID)
+	sources, err := dao.GetSources(ctx, u.Name)
 	if err != nil {
 		http.Error(w, "Couldn't get sources", 500)
 		return
