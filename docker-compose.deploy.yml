@@ -3,7 +3,7 @@ version: '3.8'
 services:
   app:
     build: .
-    image: "${DOCKER_HUB_USERNAME}/newspaper_app"
+    image: "${DOCKER_HUB_USERNAME}/newspaper"
     container_name: newspaper
     ports:
       - "8080:8080"
