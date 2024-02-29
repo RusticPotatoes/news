@@ -43,7 +43,19 @@ func (a *Article) Size() int {
 }
 
 func (a *Article) Trim(size int) {
-	if len(a.Content.TextContent) > size {
+	// Deduct a fixed amount from size for the Title
+	size -= 200
+
+	// Deduct the length of the Source.Name from size
+	size -= len(a.Source.Name)
+
+	// Trim the Title if it's too long
+	if len(a.Title) > size {
+		a.Title = a.Title[:size]
+	}
+
+	// Calculate the remaining size for the TextContent
+	if size > 0 && len(a.Content.TextContent) > size {
 		a.Content.TextContent = a.Content.TextContent[:size] + "..."
 	}
 }

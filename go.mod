@@ -10,12 +10,10 @@ require (
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	// github.com/arussellsaw/slog-gcloud v0.1.5 // indirect
 	github.com/boombuler/barcode v1.0.1
-	github.com/bwmarrin/snowflake v0.3.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/esimov/dithergo v0.0.0-20210215145655-7f9ddf55e848
 	github.com/fatih/color v1.16.0
 	github.com/fatih/set v0.2.1
-	github.com/felixge/fgprof v0.9.3
 	github.com/gigawattio/window v0.0.0-20180317192513-0f5467e35573
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
@@ -23,13 +21,12 @@ require (
 	github.com/mmcdole/gofeed v1.2.1
 	github.com/monzo/slog v0.0.0-20240212151917-4c6f6c2be05e
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
-	github.com/pacedotdev/firesearch-sdk/clients/go/firesearch v0.0.0-20201210121115-06b624f85f0c
 	github.com/pkg/errors v0.9.1
 	github.com/thatguystone/swan v0.0.0-20190904205542-d1079a5d0c05
 	golang.org/x/net v0.21.0
 	golang.org/x/sync v0.6.0
 	golang.org/x/text v0.14.0
-	google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9 // indirect
+	google.golang.org/genproto v0.0.0-20240221002015-b0ce06bbee7c // indirect
 )
 
 require (
@@ -55,13 +52,12 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/flatbuffers v23.5.26+incompatible // indirect
-	github.com/google/pprof v0.0.0-20240207164012-fb44976bdcd5 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.17.6 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
+	github.com/klauspost/compress v1.17.7 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
@@ -94,11 +90,11 @@ require (
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.18.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
-	google.golang.org/api v0.165.0 // indirect
+	google.golang.org/api v0.166.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240213162025-012b6fc9bca9 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240213162025-012b6fc9bca9 // indirect
-	google.golang.org/grpc v1.61.1 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240221002015-b0ce06bbee7c // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240221002015-b0ce06bbee7c // indirect
+	google.golang.org/grpc v1.62.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

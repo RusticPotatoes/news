@@ -6,6 +6,12 @@
     <link rel="stylesheet" href="/static/main.css?cb=20201114" type="text/css"/>
     <link rel="stylesheet" href="/static/normalize.css" type="text/css"/>
 
+    <style>
+        .text-content-limited {
+            overflow: hidden;
+        }
+    </style>
+
     <link rel="shortcut icon" href="/static/favicon.png" />
     <link rel="apple-touch-icon" href="/static/favicon.png" />
     <link rel="apple-touch-icon-precomposed" href="/static/favicon.png" />
@@ -175,6 +181,18 @@
                 trimObserver.observe(entry);
             });
         })
+    </script>
+    <script>
+        window.onload = function() {
+            var articles = document.getElementsByClassName('article');
+            for (var i = 0; i < articles.length; i++) {
+                var article = articles[i];
+                var title = article.getElementsByTagName('p')[0];
+                var textContent = article.getElementsByClassName('subcol')[0];
+                var maxHeight = article.offsetHeight - title.offsetHeight;
+                textContent.style.maxHeight = maxHeight + 'px';
+            }
+        };
     </script>
 </head>
 <body>

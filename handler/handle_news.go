@@ -60,6 +60,7 @@ func handleNews(w http.ResponseWriter, r *http.Request) {
 	if u == nil {
 		userID = "admin"
 	}
+	// TODO: get articles for edition?
 	articles, sources, err = dao.GetArticlesForOwner(ctx, userID, time.Now().Add(-48*time.Hour), time.Now())
 	if err != nil {
 		slog.Error(ctx, "Error getting edition: %s", err)
@@ -269,16 +270,9 @@ top:
 	if !e.DisableCache {
 		lc.Set(e.ID, e.cacheIndex, a)
 	}
-	a.Trim(size)
+
 	e.cacheIndex++
+	a.Trim(size)
 	return &a
 }
 
-// func capContent(c string, size int) string {
-// 	v := c
-// 	if len(v) > size+200 {
-// 		v = v[:size+200]
-// 	}
-// 	c = v
-// 	return c
-// }

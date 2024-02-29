@@ -32,5 +32,7 @@ clean:
 patch:
 	go get -u ./...
 	go get -u=patch ./...
-	go mod tidy
 	go mod verify
+	go mod download
+	go mod vendor
+	go mod tidy
